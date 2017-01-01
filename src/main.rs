@@ -2,11 +2,14 @@
 extern crate log;
 extern crate env_logger;
 
+extern crate bincode;
 extern crate clap;
 extern crate wims;
 extern crate time;
 
+// use bincode::{serialize, deserialize, Bounded};
 use clap::{App, Arg};
+use std::collections::BTreeMap;
 use std::io;
 use std::io::Write;
 use std::env;
@@ -14,6 +17,9 @@ use std::sync::mpsc;
 use std::thread;
 use time::PreciseTime;
 use wims::*;
+
+mod path_cache;
+use self::path_cache::PathCache;
 
 const AUTHOR: &'static str = env!("CARGO_PKG_AUTHORS");
 const DESCRIPTION: &'static str = env!("CARGO_PKG_DESCRIPTION");
@@ -96,8 +102,7 @@ fn create_thread(rx: RxChannel,
 
         let mut stack = FsStack::new();
         let mut dir_files = Vec::new();
-
-        // let mut items = Vec::new();
+        let mut pc: BTreeMap<String, PathCache<usize>> = BTreeMap::new();
 
         loop {
             match rx.recv() {
@@ -108,6 +113,7 @@ fn create_thread(rx: RxChannel,
                             let info = data.1.unwrap();
                             // items.push(info.clone());
                             handle_fs_item(&mut stack,
+                                           &mut pc,
                                            &mut overall,
                                            &mut dir_files,
                                            info,
@@ -125,10 +131,13 @@ fn create_thread(rx: RxChannel,
                 _ => {}
             }
         }
+
+        // println!("{:?}", pc);
     })
 }
 
 fn handle_dir_enter(stack: &mut FsStack,
+                    pc: &mut BTreeMap<String, PathCache<usize>>,
                     overall: &mut OverallInfo,
                     dir_files: &mut Vec<Box<Vec<Box<FsItemInfo>>>>,
                     info: &Box<FsItemInfo>,
@@ -137,6 +146,15 @@ fn handle_dir_enter(stack: &mut FsStack,
                     progress_format: &ProgressFormat)
                     -> bool {
     overall.dirs += 1;
+
+    let mut parts = info.path
+        .split("/")
+        .map(|i| i.to_string())
+        .collect::<Vec<String>>();
+    parts.reverse();
+
+    path_cache::construct(pc, &mut parts, &0);
+    // path_cache::print(&pc, 0);
 
     let res = print_progress_if_needed(overall, info, progress, progress_count, progress_format);
 
@@ -175,7 +193,8 @@ fn handle_exit(overall: &OverallInfo,
     print_stats(&overall, elapsed_secs, progress, progress_format);
 }
 
-fn handle_file(overall: &mut OverallInfo,
+fn handle_file(pc: &mut BTreeMap<String, PathCache<usize>>,
+               overall: &mut OverallInfo,
                dir_files: &mut Vec<Box<FsItemInfo>>,
                info: Box<FsItemInfo>,
                progress: &bool,
@@ -183,6 +202,15 @@ fn handle_file(overall: &mut OverallInfo,
                progress_format: &ProgressFormat)
                -> bool {
     overall.files += 1;
+
+    let mut parts = info.path
+        .split("/")
+        .map(|i| i.to_string())
+        .collect::<Vec<String>>();
+    parts.reverse();
+
+    path_cache::construct(pc, &mut parts, &0);
+    // path_cache::print(&pc, 0);
 
     let res = print_progress_if_needed(overall, &info, progress, progress_count, progress_format);
 
@@ -193,6 +221,7 @@ fn handle_file(overall: &mut OverallInfo,
 }
 
 fn handle_fs_item(stack: &mut FsStack,
+                  pc: &mut BTreeMap<String, PathCache<usize>>,
                   overall: &mut OverallInfo,
                   dir_files: &mut Vec<Box<Vec<Box<FsItemInfo>>>>,
                   info: Box<FsItemInfo>,
@@ -203,6 +232,7 @@ fn handle_fs_item(stack: &mut FsStack,
     match info.event_type {
         EventType::DirEnter => {
             if handle_dir_enter(stack,
+                                pc,
                                 overall,
                                 dir_files,
                                 &info,
@@ -216,7 +246,8 @@ fn handle_fs_item(stack: &mut FsStack,
             handle_dir_leave(stack, dir_files, &info);
         }
         EventType::File => {
-            if handle_file(overall,
+            if handle_file(pc,
+                           overall,
                            dir_files.last_mut().unwrap(),
                            info,
                            &progress,
