@@ -59,51 +59,34 @@ fn main() {
 
     env_logger::init().unwrap();
 
-    let progress = matches.is_present("progress");
-    let progress_count =
-        matches.value_of("progress-count").unwrap().to_string().parse::<u64>().unwrap_or(10000);
-    let progress_format =
-        ProgressFormat::from(matches.value_of("progress-format").unwrap().to_string());
-
-    fn print_stats(info: &OverallInfo,
-                   elapsed_secs: f64,
-                   progress: bool,
-                   progress_format: ProgressFormat) {
-
-        let dirs_count = info.dirs;
-        let files_count = info.files;
-
-        let fpd = if dirs_count > 0 {
-            files_count / dirs_count
-        } else {
-            0
-        };
-
-        let fps = if elapsed_secs > 0.0 {
-            (files_count as f64 / elapsed_secs) as u64
-        } else {
-            0
-        };
-
-        if progress {
-            match progress_format {
-                ProgressFormat::Dot => println!(""),
-                _ => {}
-            };
-        }
-
-        println!("Dirs: {}, Files: {}, Files Per Dir: {}, Time: {}, Speed: {} fps",
-                 dirs_count,
-                 files_count,
-                 fpd,
-                 elapsed_secs,
-                 fps);
-    }
-
-    let mut stdout = io::stdout();
     let (tx, rx) = mpsc::channel();
+    let handle = create_thread(rx,
+                               matches.is_present("progress"),
+                               matches.value_of("progress-count")
+                                   .unwrap()
+                                   .to_string()
+                                   .parse::<u64>()
+                                   .unwrap_or(10000),
+                               ProgressFormat::from(matches.value_of("progress-format")
+                                   .unwrap()
+                                   .to_string()));
+
+    let dirs: Vec<_> = matches.values_of("DIR").unwrap().collect();
+    wims::process(tx.clone(), &dirs);
+
+    let _ = tx.send((MessageType::Exit, None, None));
+    let _ = handle.join();
+}
+
+fn create_thread(rx: RxChannel,
+                 progress: bool,
+                 progress_count: u64,
+                 progress_format: ProgressFormat)
+                 -> thread::JoinHandle<()> {
+    let mut stdout = io::stdout();
     let start = PreciseTime::now();
-    let handle = thread::spawn(move || {
+
+    thread::spawn(move || {
         let mut info = OverallInfo {
             files: 0,
             dirs: 0,
@@ -141,11 +124,40 @@ fn main() {
                 _ => {}
             }
         }
-    });
+    })
+}
 
-    let dirs: Vec<_> = matches.values_of("DIR").unwrap().collect();
-    wims::process(tx.clone(), &dirs);
+fn print_stats(info: &OverallInfo,
+               elapsed_secs: f64,
+               progress: bool,
+               progress_format: ProgressFormat) {
 
-    let _ = tx.send((MessageType::Exit, None, None));
-    let _ = handle.join();
+    let dirs_count = info.dirs;
+    let files_count = info.files;
+
+    let fpd = if dirs_count > 0 {
+        files_count / dirs_count
+    } else {
+        0
+    };
+
+    let fps = if elapsed_secs > 0.0 {
+        (files_count as f64 / elapsed_secs) as u64
+    } else {
+        0
+    };
+
+    if progress {
+        match progress_format {
+            ProgressFormat::Dot => println!(""),
+            _ => {}
+        };
+    }
+
+    println!("Dirs: {}, Files: {}, Files Per Dir: {}, Time: {}, Speed: {} fps",
+             dirs_count,
+             files_count,
+             fpd,
+             elapsed_secs,
+             fps);
 }
