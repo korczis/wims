@@ -7,7 +7,6 @@ extern crate wims;
 
 use clap::{App, Arg};
 use std::env;
-
 use std::io;
 use std::io::Write;
 use std::fs::{self, DirEntry};
@@ -84,7 +83,7 @@ fn main() {
 
                             if progress && (info.files % progress_count) == 0 {
                                 match progress_format {
-                                    ProgressFormat::Path => println!("{} - {}", info.files, path),
+                                    ProgressFormat::Path => println!("{} {}", info.files, path),
                                     ProgressFormat::Dot => print!("."),
                                 }
                                 let _ = stdout.flush();
@@ -238,6 +237,9 @@ fn main() {
                 };
             }
 
+            let _ = tx.send((MessageType::Exit, None, None));
+            let _ = handle.join();
+
             println!("Dirs: {}, Files: {}, Files Per Dir: {}, Time: {}, Speed: {} fps",
                      dirs_count,
                      files_count,
@@ -247,7 +249,4 @@ fn main() {
         }
         _ => {}
     };
-
-    let _ = tx.send((MessageType::Exit, None, None));
-    let _ = handle.join();
 }
