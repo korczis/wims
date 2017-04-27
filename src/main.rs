@@ -109,6 +109,9 @@ fn create_thread(rx: RxChannel,
                             match info.event_type {
                                 EventType::DirEnter => {
                                     dir_files.push(Vec::new());
+
+                                    debug!("{:?}", info);
+
                                     stack.push(FsDirInfo {
                                         path: info.path,
                                         files: Vec::new(),
@@ -136,6 +139,7 @@ fn create_thread(rx: RxChannel,
                                         let _ = stdout.flush();
                                     }
 
+                                    debug!("{:?}", info);
                                     dir_files.last_mut().unwrap().push(info);
                                 }
                             };
