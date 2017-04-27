@@ -101,33 +101,17 @@ fn create_thread(rx: RxChannel,
             match rx.recv() {
                 Ok(received) => {
                     let data: (MessageType, Option<FsItemInfo>) = received;
-
+                    let info = data.1.unwrap();
                     match data.0 {
                         MessageType::FsItem => {
-                            let info = data.1.unwrap();
-
-                            match info.event_type {
-                                EventType::DirEnter => {
-                                    handle_dir_enter(&mut stack,
-                                                     &mut overall,
-                                                     &mut dir_files,
-                                                     &info);
-                                }
-                                EventType::DirLeave => {
-                                    handle_dir_leave(&mut stack, &mut dir_files, &info);
-                                }
-                                EventType::File => {
-                                    if handle_file(&mut overall,
-                                                   &mut dir_files,
-                                                   &info,
-                                                   &progress,
-                                                   &progress_count,
-                                                   &progress_format) {
-                                        let _ = stdout.flush();
-                                    }
-                                }
-                            };
-
+                            handle_fs_item(&mut stack,
+                                           &mut overall,
+                                           &mut dir_files,
+                                           &info,
+                                           &progress,
+                                           &progress_count,
+                                           &progress_format,
+                                           &mut stdout);
                         }
                         MessageType::Exit => {
                             handle_exit(&overall, &start, &progress, &progress_format);
@@ -202,6 +186,34 @@ fn handle_file(overall: &mut OverallInfo,
     dir_files.last_mut().unwrap().push(info.clone());
 
     res
+}
+
+fn handle_fs_item(stack: &mut FsStack,
+                  overall: &mut OverallInfo,
+                  dir_files: &mut Vec<Vec<FsItemInfo>>,
+                  info: &FsItemInfo,
+                  progress: &bool,
+                  progress_count: &u64,
+                  progress_format: &ProgressFormat,
+                  stdout: &mut io::Stdout) {
+    match info.event_type {
+        EventType::DirEnter => {
+            handle_dir_enter(stack, overall, dir_files, &info);
+        }
+        EventType::DirLeave => {
+            handle_dir_leave(stack, dir_files, &info);
+        }
+        EventType::File => {
+            if handle_file(overall,
+                           dir_files,
+                           &info,
+                           &progress,
+                           &progress_count,
+                           &progress_format) {
+                let _ = stdout.flush();
+            }
+        }
+    };
 }
 
 fn print_stats(info: &OverallInfo,
