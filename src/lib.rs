@@ -88,11 +88,7 @@ pub fn get_file_info(event_type: &EventType, path: &Path, entry: &DirEntry) -> F
 
 pub fn process(tx: TxChannel, dirs: &Vec<&str>) {
     let mut visitor = |item: &FsItemInfo| {
-        match item.event_type {
-            _ => {
-                let _ = tx.send((MessageType::FsItem, Some(item.clone())));
-            }
-        };
+        let _ = tx.send((MessageType::FsItem, Some(item.clone())));
     };
 
     for dir in dirs.iter() {

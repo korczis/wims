@@ -108,50 +108,29 @@ fn create_thread(rx: RxChannel,
 
                             match info.event_type {
                                 EventType::DirEnter => {
-                                    dir_files.push(Vec::new());
-
-                                    debug!("{:?}", info);
-
-                                    stack.push(FsDirInfo {
-                                        path: info.path,
-                                        files: Vec::new(),
-                                        files_size: 0,
-                                    });
-                                    overall.dirs += 1;
+                                    handle_dir_enter(&mut stack,
+                                                     &mut overall,
+                                                     &mut dir_files,
+                                                     &info);
                                 }
                                 EventType::DirLeave => {
-                                    let files = dir_files.pop().unwrap();
-                                    stack.last_mut().unwrap().files = files;
-                                    stack.last_mut().unwrap().calculate_files_size();
-
-                                    debug!("Stack when leaving {}: {:?}", info.path, stack);
-                                    stack.pop();
+                                    handle_dir_leave(&mut stack, &mut dir_files, &info);
                                 }
                                 EventType::File => {
-                                    overall.files += 1;
-                                    if progress && (overall.files % progress_count) == 0 {
-                                        match progress_format {
-                                            ProgressFormat::Path => {
-                                                println!("{} {}", overall.files, info.path);
-                                            }
-                                            ProgressFormat::Dot => print!("."),
-                                        }
+                                    if handle_file(&mut overall,
+                                                   &mut dir_files,
+                                                   &info,
+                                                   &progress,
+                                                   &progress_count,
+                                                   &progress_format) {
                                         let _ = stdout.flush();
                                     }
-
-                                    debug!("{:?}", info);
-                                    dir_files.last_mut().unwrap().push(info);
                                 }
                             };
 
                         }
                         MessageType::Exit => {
-                            let diff = start.to(PreciseTime::now());
-                            let elapsed_secs = diff.num_seconds() as f64 +
-                                               diff.num_milliseconds() as f64 * 0.001 +
-                                               diff.num_microseconds().unwrap() as f64 * 1e-6;
-
-                            print_stats(&overall, elapsed_secs, progress, progress_format);
+                            handle_exit(&overall, &start, &progress, &progress_format);
                             break;
                         }
                     };
@@ -162,10 +141,73 @@ fn create_thread(rx: RxChannel,
     })
 }
 
+fn handle_dir_enter(stack: &mut FsStack,
+                    overall: &mut OverallInfo,
+                    dir_files: &mut Vec<Vec<FsItemInfo>>,
+                    info: &FsItemInfo) {
+    dir_files.push(Vec::new());
+
+    debug!("{:?}", info);
+
+    stack.push(FsDirInfo {
+        path: info.path.clone(),
+        files: Vec::new(),
+        files_size: 0,
+    });
+    overall.dirs += 1;
+}
+
+fn handle_dir_leave(stack: &mut FsStack, dir_files: &mut Vec<Vec<FsItemInfo>>, info: &FsItemInfo) {
+    let files = dir_files.pop().unwrap();
+    stack.last_mut().unwrap().files = files;
+    stack.last_mut().unwrap().calculate_files_size();
+
+    debug!("Stack when leaving {}: {:?}", info.path, stack);
+    stack.pop();
+}
+
+fn handle_exit(overall: &OverallInfo,
+               start: &PreciseTime,
+               progress: &bool,
+               progress_format: &ProgressFormat) {
+    let diff = start.to(PreciseTime::now());
+    let elapsed_secs = diff.num_seconds() as f64 + diff.num_milliseconds() as f64 * 0.001 +
+                       diff.num_microseconds().unwrap() as f64 * 1e-6;
+
+    print_stats(&overall, elapsed_secs, progress, progress_format);
+}
+
+fn handle_file(overall: &mut OverallInfo,
+               dir_files: &mut Vec<Vec<FsItemInfo>>,
+               info: &FsItemInfo,
+               progress: &bool,
+               progress_count: &u64,
+               progress_format: &ProgressFormat)
+               -> bool {
+    overall.files += 1;
+    let res = if *progress && (overall.files % progress_count) == 0 {
+        match *progress_format {
+            ProgressFormat::Path => {
+                println!("{} {}", overall.files, info.path);
+            }
+            ProgressFormat::Dot => print!("."),
+        }
+        true
+
+    } else {
+        false
+    };
+
+    debug!("{:?}", info);
+    dir_files.last_mut().unwrap().push(info.clone());
+
+    res
+}
+
 fn print_stats(info: &OverallInfo,
                elapsed_secs: f64,
-               progress: bool,
-               progress_format: ProgressFormat) {
+               progress: &bool,
+               progress_format: &ProgressFormat) {
 
     let dirs_count = info.dirs;
     let files_count = info.files;
@@ -182,8 +224,8 @@ fn print_stats(info: &OverallInfo,
         0
     };
 
-    if progress {
-        match progress_format {
+    if *progress {
+        match *progress_format {
             ProgressFormat::Dot => println!(""),
             _ => {}
         };
