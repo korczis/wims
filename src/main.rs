@@ -1,3 +1,4 @@
+#[macro_use]
 extern crate log;
 extern crate env_logger;
 
@@ -74,7 +75,7 @@ fn main() {
     let dirs: Vec<_> = matches.values_of("DIR").unwrap().collect();
     wims::process(tx.clone(), &dirs);
 
-    let _ = tx.send((MessageType::Exit, None, None));
+    let _ = tx.send((MessageType::Exit, None));
     let _ = handle.join();
 }
 
@@ -83,32 +84,62 @@ fn create_thread(rx: RxChannel,
                  progress_count: u64,
                  progress_format: ProgressFormat)
                  -> thread::JoinHandle<()> {
+
     let mut stdout = io::stdout();
     let start = PreciseTime::now();
 
     thread::spawn(move || {
-        let mut info = OverallInfo {
+        let mut overall = OverallInfo {
             files: 0,
             dirs: 0,
         };
 
+        let mut stack = FsStack::new();
+        let mut dir_files = Vec::new();
+
         loop {
             match rx.recv() {
                 Ok(received) => {
-                    let data: (MessageType, Option<OverallInfo>, Option<String>) = received;
+                    let data: (MessageType, Option<FsItemInfo>) = received;
 
                     match data.0 {
-                        MessageType::Entry => {
-                            info = data.1.unwrap();
-                            let path = data.2.unwrap();
+                        MessageType::FsItem => {
+                            let info = data.1.unwrap();
 
-                            if progress && (info.files % progress_count) == 0 {
-                                match progress_format {
-                                    ProgressFormat::Path => println!("{} {}", info.files, path),
-                                    ProgressFormat::Dot => print!("."),
+                            match info.event_type {
+                                EventType::DirEnter => {
+                                    dir_files.push(Vec::new());
+                                    stack.push(FsDirInfo {
+                                        path: info.path,
+                                        files: Vec::new(),
+                                        files_size: 0,
+                                    });
+                                    overall.dirs += 1;
                                 }
-                                let _ = stdout.flush();
-                            }
+                                EventType::DirLeave => {
+                                    let files = dir_files.pop().unwrap();
+                                    stack.last_mut().unwrap().files = files;
+                                    stack.last_mut().unwrap().calculate_files_size();
+
+                                    debug!("Stack when leaving {}: {:?}", info.path, stack);
+                                    stack.pop();
+                                }
+                                EventType::File => {
+                                    overall.files += 1;
+                                    if progress && (overall.files % progress_count) == 0 {
+                                        match progress_format {
+                                            ProgressFormat::Path => {
+                                                println!("{} {}", overall.files, info.path);
+                                            }
+                                            ProgressFormat::Dot => print!("."),
+                                        }
+                                        let _ = stdout.flush();
+                                    }
+
+                                    dir_files.last_mut().unwrap().push(info);
+                                }
+                            };
+
                         }
                         MessageType::Exit => {
                             let diff = start.to(PreciseTime::now());
@@ -116,7 +147,7 @@ fn create_thread(rx: RxChannel,
                                                diff.num_milliseconds() as f64 * 0.001 +
                                                diff.num_microseconds().unwrap() as f64 * 1e-6;
 
-                            print_stats(&info, elapsed_secs, progress, progress_format);
+                            print_stats(&overall, elapsed_secs, progress, progress_format);
                             break;
                         }
                     };

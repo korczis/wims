@@ -7,8 +7,15 @@ use std::io;
 use std::path::Path;
 use std::sync::mpsc;
 
+#[derive(Copy, Clone, Debug)]
+pub enum EventType {
+    DirEnter,
+    DirLeave,
+    File,
+}
+
 pub enum MessageType {
-    Entry,
+    FsItem,
     Exit,
 }
 
@@ -30,7 +37,8 @@ impl From<String> for ProgressFormat {
 }
 
 #[derive(Debug, Clone)]
-pub struct FsFileInfo {
+pub struct FsItemInfo {
+    pub event_type: EventType,
     pub path: String,
     pub ino: u64,
     pub mtime: i64,
@@ -41,7 +49,7 @@ pub struct FsFileInfo {
 pub struct FsDirInfo {
     pub path: String,
     // pub dirs: Vec<FsDirInfo>,
-    pub files: Vec<FsFileInfo>,
+    pub files: Vec<FsItemInfo>,
     pub files_size: u64,
 }
 
@@ -61,75 +69,53 @@ pub struct OverallInfo {
     pub files: u64,
 }
 
-pub type RxChannel = mpsc::Receiver<(MessageType, Option<OverallInfo>, Option<String>)>;
-pub type TxChannel = mpsc::Sender<(MessageType, Option<OverallInfo>, Option<String>)>;
+pub type RxChannel = mpsc::Receiver<(MessageType, Option<FsItemInfo>)>;
+pub type TxChannel = mpsc::Sender<(MessageType, Option<FsItemInfo>)>;
 
-pub fn get_file_info(path: &Path, entry: &DirEntry) -> FsFileInfo {
+pub fn get_file_info(event_type: &EventType, path: &Path, entry: &DirEntry) -> FsItemInfo {
     let md = Box::new(entry.metadata().unwrap()) as Box<std::os::unix::fs::MetadataExt>;
 
-    let res = FsFileInfo {
+    let res = FsItemInfo {
+        event_type: *event_type,
         path: path.to_str().unwrap().to_string(),
         ino: md.ino(),
         mtime: md.mtime(),
         size: md.size(),
     };
 
-    debug!("{:?}", res);
-
     return res;
 }
 
 pub fn process(tx: TxChannel, dirs: &Vec<&str>) {
-    let mut info = OverallInfo {
-        dirs: 0,
-        files: 0,
-    };
-
-    let mut dir_stack: FsStack = FsStack::new();
-    let mut visitor = |path: &Path, _entry: &DirEntry| {
-        if path.is_dir() {
-            info.dirs += 1;
-        } else if path.is_file() {
-            info.files += 1;
-
-            let _ = tx.send((MessageType::Entry,
-                             Some(info.clone()),
-                             Some(path.to_str().unwrap().to_string())));
-        }
+    let mut visitor = |item: &FsItemInfo| {
+        match item.event_type {
+            _ => {
+                let _ = tx.send((MessageType::FsItem, Some(item.clone())));
+            }
+        };
     };
 
     for dir in dirs.iter() {
-        let _ = self::visit_dir(&mut dir_stack, Path::new(dir), &mut visitor);
+        let _ = self::visit_dir(Path::new(dir), &mut visitor);
     }
 }
 
-pub fn visit_dir(stack: &mut FsStack,
-                 dir: &Path,
-                 cb: &mut FnMut(&Path, &DirEntry))
-                 -> io::Result<()> {
-
+pub fn visit_dir(dir: &Path, cb: &mut FnMut(&FsItemInfo)) -> io::Result<()> {
     debug!("Entering directory {:?}", dir);
-
-    let mut stat = OverallInfo {
-        dirs: 0,
-        files: 0,
-    };
 
     let metadata = fs::symlink_metadata(dir)?;
     let file_type = metadata.file_type();
 
     if dir.is_dir() && !file_type.is_symlink() {
-        // let _dir_meta = dir.metadata();
-        let dir_info = FsDirInfo {
+        let dir_meta = Box::new(dir.metadata().unwrap()) as Box<std::os::unix::fs::MetadataExt>;
+
+        cb(&FsItemInfo {
+            event_type: EventType::DirEnter,
             path: dir.to_str().unwrap().to_string(),
-            // dirs: Vec::new(),
-            files: Vec::new(),
-            files_size: 0,
-        };
-
-        stack.push(dir_info);
-
-        let mut dir_files = Vec::new();
+            ino: dir_meta.ino(),
+            mtime: dir_meta.mtime(),
+            size: dir_meta.size(),
+        });
 
         if let Ok(entries) = fs::read_dir(dir) {
             for entry in entries {
@@ -138,30 +124,26 @@ pub fn visit_dir(stack: &mut FsStack,
                 if let Ok(entry) = entry {
                     let path = entry.path();
                     if path.is_dir() {
-                        debug!("Found directory: {:?}", &path);
+                        debug!("Processing directory: {:?}", &path);
+                        let _ = self::visit_dir(&path, cb);
 
-                        stat.dirs += 1;
-                        let _ = self::visit_dir(stack, &path, cb);
-                        cb(&path, &entry);
                     } else if path.is_file() {
-                        debug!("Found file: {:?}", &path);
+                        debug!("Processing file: {:?}", &path);
 
-                        stat.files += 1;
-
-                        dir_files.push(self::get_file_info(&path, &entry));
-                        cb(&path, &entry);
+                        let entry_info = self::get_file_info(&EventType::File, &path, &entry);
+                        cb(&entry_info);
                     }
                 }
             }
         }
 
-        stack.last_mut().unwrap().files = dir_files;
-        stack.last_mut().unwrap().calculate_files_size();
-
-        debug!("{:?}", stack);
-        stack.pop();
-    } else {
-        debug!("{:?}", stack);
+        cb(&FsItemInfo {
+            event_type: EventType::DirLeave,
+            path: dir.to_str().unwrap().to_string(),
+            ino: dir_meta.ino(),
+            mtime: dir_meta.mtime(),
+            size: dir_meta.size(),
+        });
     }
 
     debug!("Leaving directory {:?}", dir);
