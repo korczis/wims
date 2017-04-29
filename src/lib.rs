@@ -14,12 +14,13 @@ pub enum EventType {
     File,
 }
 
+#[derive(Debug)]
 pub enum MessageType {
-    FsItem,
     Exit,
+    FsItem,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Debug)]
 pub enum ProgressFormat {
     Dot,
     Path,
@@ -42,7 +43,7 @@ impl From<String> for ProgressFormat {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct FsItemInfo {
     pub event_type: EventType,
     pub path: String,
@@ -51,7 +52,7 @@ pub struct FsItemInfo {
     pub size: u64,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct FsDirInfo {
     pub path: String,
     // pub dirs: Vec<FsDirInfo>,
@@ -81,34 +82,28 @@ impl OverallInfo {
     }
 }
 
-pub type RxChannel = mpsc::Receiver<(MessageType, Option<FsItemInfo>)>;
-pub type TxChannel = mpsc::Sender<(MessageType, Option<FsItemInfo>)>;
+pub type RxChannel = mpsc::Receiver<(MessageType, Option<Box<FsItemInfo>>)>;
+pub type TxChannel = mpsc::Sender<(MessageType, Option<Box<FsItemInfo>>)>;
 
-pub fn get_file_info(event_type: &EventType, path: &Path, entry: &DirEntry) -> FsItemInfo {
+pub fn get_file_info(event_type: &EventType, path: &Path, entry: &DirEntry) -> Box<FsItemInfo> {
     let md = Box::new(entry.metadata().unwrap()) as Box<std::os::unix::fs::MetadataExt>;
 
-    let res = FsItemInfo {
+    Box::new(FsItemInfo {
         event_type: *event_type,
         path: path.to_str().unwrap().to_string(),
         ino: md.ino(),
         mtime: md.mtime(),
         size: md.size(),
-    };
-
-    return res;
+    })
 }
 
-pub fn process(tx: TxChannel, dirs: &Vec<&str>) {
-    let mut visitor = |item: &FsItemInfo| {
-        let _ = tx.send((MessageType::FsItem, Some(item.clone())));
-    };
-
+pub fn process(tx: &TxChannel, dirs: &Vec<&str>) {
     for dir in dirs.iter() {
-        let _ = self::visit_dir(Path::new(dir), &mut visitor);
+        let _ = self::visit_dir(tx, Path::new(dir));
     }
 }
 
-pub fn visit_dir(dir: &Path, cb: &mut FnMut(&FsItemInfo)) -> io::Result<()> {
+pub fn visit_dir(tx: &TxChannel, dir: &Path) -> io::Result<()> {
     debug!("Entering directory {:?}", dir);
 
     let metadata = fs::symlink_metadata(dir)?;
@@ -117,13 +112,14 @@ pub fn visit_dir(dir: &Path, cb: &mut FnMut(&FsItemInfo)) -> io::Result<()> {
     if dir.is_dir() && !file_type.is_symlink() {
         let dir_meta = Box::new(dir.metadata().unwrap()) as Box<std::os::unix::fs::MetadataExt>;
 
-        cb(&FsItemInfo {
+        let _ = tx.send((MessageType::FsItem,
+                         Some(Box::new(FsItemInfo {
             event_type: EventType::DirEnter,
             path: dir.to_str().unwrap().to_string(),
             ino: dir_meta.ino(),
             mtime: dir_meta.mtime(),
             size: dir_meta.size(),
-        });
+        }))));
 
         if let Ok(entries) = fs::read_dir(dir) {
             for entry in entries {
@@ -133,25 +129,27 @@ pub fn visit_dir(dir: &Path, cb: &mut FnMut(&FsItemInfo)) -> io::Result<()> {
                     let path = entry.path();
                     if path.is_dir() {
                         debug!("Processing directory: {:?}", &path);
-                        let _ = self::visit_dir(&path, cb);
+                        let _ = self::visit_dir(tx, &path);
 
                     } else if path.is_file() {
                         debug!("Processing file: {:?}", &path);
 
-                        let entry_info = self::get_file_info(&EventType::File, &path, &entry);
-                        cb(&entry_info);
+                        let _ =
+                            tx.send((MessageType::FsItem,
+                                     Some(self::get_file_info(&EventType::File, &path, &entry))));
                     }
                 }
             }
         }
 
-        cb(&FsItemInfo {
+        let _ = tx.send((MessageType::FsItem,
+                         Some(Box::new(FsItemInfo {
             event_type: EventType::DirLeave,
             path: dir.to_str().unwrap().to_string(),
             ino: dir_meta.ino(),
             mtime: dir_meta.mtime(),
             size: dir_meta.size(),
-        });
+        }))));
     }
 
     debug!("Leaving directory {:?}", dir);

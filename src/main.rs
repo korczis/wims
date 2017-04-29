@@ -73,7 +73,7 @@ fn main() {
                                    .to_string()));
 
     let dirs: Vec<_> = matches.values_of("DIR").unwrap().collect();
-    wims::process(tx.clone(), &dirs);
+    wims::process(&tx, &dirs);
 
     let _ = tx.send((MessageType::Exit, None));
     let _ = handle.join();
@@ -102,7 +102,7 @@ fn create_thread(rx: RxChannel,
         loop {
             match rx.recv() {
                 Ok(received) => {
-                    let data: (MessageType, Option<FsItemInfo>) = received;
+                    let data: (MessageType, Option<Box<FsItemInfo>>) = received;
                     match data.0 {
                         MessageType::FsItem => {
                             let info = data.1.unwrap();
@@ -130,7 +130,7 @@ fn create_thread(rx: RxChannel,
 
 fn handle_dir_enter(stack: &mut FsStack,
                     overall: &mut OverallInfo,
-                    dir_files: &mut Vec<Vec<FsItemInfo>>,
+                    dir_files: &mut Vec<Vec<Box<FsItemInfo>>>,
                     info: &FsItemInfo,
                     progress: &bool,
                     progress_count: &u64,
@@ -153,9 +153,11 @@ fn handle_dir_enter(stack: &mut FsStack,
     res
 }
 
-fn handle_dir_leave(stack: &mut FsStack, dir_files: &mut Vec<Vec<FsItemInfo>>, info: &FsItemInfo) {
+fn handle_dir_leave(stack: &mut FsStack,
+                    dir_files: &mut Vec<Vec<Box<FsItemInfo>>>,
+                    info: &FsItemInfo) {
     let files = dir_files.pop().unwrap();
-    stack.last_mut().unwrap().files = files;
+    // stack.last_mut().unwrap().files = files;
     stack.last_mut().unwrap().calculate_files_size();
 
     debug!("Stack when leaving {}: {:?}", info.path, stack);
@@ -167,15 +169,15 @@ fn handle_exit(overall: &OverallInfo,
                progress: &bool,
                progress_format: &ProgressFormat) {
     let diff = start.to(PreciseTime::now());
-    let elapsed_secs = diff.num_seconds() as f64 + diff.num_milliseconds() as f64 * 0.001 +
-                       diff.num_microseconds().unwrap() as f64 * 1e-6;
+    // let elapsed_secs = diff.num_seconds() as f64; // + diff.num_milliseconds() as f64 * 0.001 + diff.num_microseconds().unwrap() as f64 * 1e-6;
+    let elapsed_secs = diff.num_nanoseconds().unwrap() as f64 * 1e-9;
 
     print_stats(&overall, elapsed_secs, progress, progress_format);
 }
 
 fn handle_file(overall: &mut OverallInfo,
-               dir_files: &mut Vec<Vec<FsItemInfo>>,
-               info: &FsItemInfo,
+               _dir_files: &mut Vec<Vec<Box<FsItemInfo>>>,
+               info: &Box<FsItemInfo>,
                progress: &bool,
                progress_count: &u64,
                progress_format: &ProgressFormat)
@@ -185,15 +187,15 @@ fn handle_file(overall: &mut OverallInfo,
     let res = print_progress_if_needed(overall, info, progress, progress_count, progress_format);
 
     debug!("{:?}", info);
-    dir_files.last_mut().unwrap().push(info.clone());
+    // dir_files.last_mut().unwrap().push(info);
 
     res
 }
 
 fn handle_fs_item(stack: &mut FsStack,
                   overall: &mut OverallInfo,
-                  dir_files: &mut Vec<Vec<FsItemInfo>>,
-                  info: &FsItemInfo,
+                  dir_files: &mut Vec<Vec<Box<FsItemInfo>>>,
+                  info: &Box<FsItemInfo>,
                   progress: &bool,
                   progress_count: &u64,
                   progress_format: &ProgressFormat,
@@ -258,6 +260,7 @@ fn print_stats(info: &OverallInfo,
 
     let dirs_count = info.dirs;
     let files_count = info.files;
+    let items_count = info.all();
 
     let fpd = if dirs_count > 0 {
         files_count / dirs_count
@@ -266,7 +269,7 @@ fn print_stats(info: &OverallInfo,
     };
 
     let fps = if elapsed_secs > 0.0 {
-        (files_count as f64 / elapsed_secs) as u64
+        (items_count as f64 / elapsed_secs) as u64
     } else {
         0
     };
