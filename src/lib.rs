@@ -23,6 +23,7 @@ pub enum MessageType {
 pub enum ProgressFormat {
     Dot,
     Path,
+    Raw,
 }
 
 impl From<String> for ProgressFormat {
@@ -30,7 +31,12 @@ impl From<String> for ProgressFormat {
         let val = val.to_lowercase();
         if val == String::from("path") {
             ProgressFormat::Path
+        } else if val == String::from("raw") {
+            ProgressFormat::Raw
+        } else if val == String::from("dot") {
+            ProgressFormat::Dot
         } else {
+            warn!("Invalid format specified - {:?} - using Progress::Dot", val);
             ProgressFormat::Dot
         }
     }
@@ -67,6 +73,12 @@ pub type FsStack = Vec<FsDirInfo>;
 pub struct OverallInfo {
     pub dirs: u64,
     pub files: u64,
+}
+
+impl OverallInfo {
+    pub fn all(&self) -> u64 {
+        self.dirs + self.files
+    }
 }
 
 pub type RxChannel = mpsc::Receiver<(MessageType, Option<FsItemInfo>)>;

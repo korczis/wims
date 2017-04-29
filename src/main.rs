@@ -42,7 +42,7 @@ fn main() {
             .help("Progress format")
             .short("f")
             .long("progress-format")
-            .possible_values(&["dot", "path"])
+            .possible_values(&["dot", "path", "raw"])
             .default_value("path"))
         .arg(Arg::with_name("DIR")
             .help("Directories to process")
@@ -97,6 +97,8 @@ fn create_thread(rx: RxChannel,
         let mut stack = FsStack::new();
         let mut dir_files = Vec::new();
 
+        // let mut items = Vec::new();
+
         loop {
             match rx.recv() {
                 Ok(received) => {
@@ -104,6 +106,7 @@ fn create_thread(rx: RxChannel,
                     match data.0 {
                         MessageType::FsItem => {
                             let info = data.1.unwrap();
+                            // items.push(info.clone());
                             handle_fs_item(&mut stack,
                                            &mut overall,
                                            &mut dir_files,
@@ -128,7 +131,15 @@ fn create_thread(rx: RxChannel,
 fn handle_dir_enter(stack: &mut FsStack,
                     overall: &mut OverallInfo,
                     dir_files: &mut Vec<Vec<FsItemInfo>>,
-                    info: &FsItemInfo) {
+                    info: &FsItemInfo,
+                    progress: &bool,
+                    progress_count: &u64,
+                    progress_format: &ProgressFormat)
+                    -> bool {
+    overall.dirs += 1;
+
+    let res = print_progress_if_needed(overall, info, progress, progress_count, progress_format);
+
     dir_files.push(Vec::new());
 
     debug!("{:?}", info);
@@ -138,7 +149,8 @@ fn handle_dir_enter(stack: &mut FsStack,
         files: Vec::new(),
         files_size: 0,
     });
-    overall.dirs += 1;
+
+    res
 }
 
 fn handle_dir_leave(stack: &mut FsStack, dir_files: &mut Vec<Vec<FsItemInfo>>, info: &FsItemInfo) {
@@ -169,18 +181,8 @@ fn handle_file(overall: &mut OverallInfo,
                progress_format: &ProgressFormat)
                -> bool {
     overall.files += 1;
-    let res = if *progress && (overall.files % progress_count) == 0 {
-        match *progress_format {
-            ProgressFormat::Path => {
-                println!("{} {}", overall.files, info.path);
-            }
-            ProgressFormat::Dot => print!("."),
-        }
-        true
 
-    } else {
-        false
-    };
+    let res = print_progress_if_needed(overall, info, progress, progress_count, progress_format);
 
     debug!("{:?}", info);
     dir_files.last_mut().unwrap().push(info.clone());
@@ -198,7 +200,15 @@ fn handle_fs_item(stack: &mut FsStack,
                   stdout: &mut io::Stdout) {
     match info.event_type {
         EventType::DirEnter => {
-            handle_dir_enter(stack, overall, dir_files, &info);
+            if handle_dir_enter(stack,
+                                overall,
+                                dir_files,
+                                &info,
+                                &progress,
+                                &progress_count,
+                                &progress_format) {
+                let _ = stdout.flush();
+            }
         }
         EventType::DirLeave => {
             handle_dir_leave(stack, dir_files, &info);
@@ -214,6 +224,31 @@ fn handle_fs_item(stack: &mut FsStack,
             }
         }
     };
+}
+
+fn print_progress(overall: &OverallInfo, info: &FsItemInfo, progress_format: &ProgressFormat) {
+    match *progress_format {
+        ProgressFormat::Dot => print!("."),
+        ProgressFormat::Path => {
+            println!("{} {}", overall.all(), info.path);
+        }
+        ProgressFormat::Raw => println!("{:?}", info),
+    }
+}
+
+fn print_progress_if_needed(overall: &OverallInfo,
+                            info: &FsItemInfo,
+                            progress: &bool,
+                            progress_count: &u64,
+                            progress_format: &ProgressFormat)
+                            -> bool {
+    if *progress && (overall.all() % progress_count) == 0 {
+        print_progress(&overall, &info, &progress_format);
+        true
+
+    } else {
+        false
+    }
 }
 
 fn print_stats(info: &OverallInfo,
@@ -243,7 +278,7 @@ fn print_stats(info: &OverallInfo,
         };
     }
 
-    println!("Dirs: {}, Files: {}, Files Per Dir: {}, Time: {}, Speed: {} fps",
+    println!("Dirs: {}, Files: {}, Files Per Dir: {}, Time: {:.2}, Speed: {} fps",
              dirs_count,
              files_count,
              fpd,
