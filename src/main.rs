@@ -131,7 +131,7 @@ fn create_thread(rx: RxChannel,
 fn handle_dir_enter(stack: &mut FsStack,
                     overall: &mut OverallInfo,
                     dir_files: &mut Vec<Box<Vec<Box<FsItemInfo>>>>,
-                    info: &FsItemInfo,
+                    info: &Box<FsItemInfo>,
                     progress: &bool,
                     progress_count: &u64,
                     progress_format: &ProgressFormat)
@@ -155,7 +155,7 @@ fn handle_dir_enter(stack: &mut FsStack,
 
 fn handle_dir_leave(stack: &mut FsStack,
                     _dir_files: &mut Vec<Box<Vec<Box<FsItemInfo>>>>,
-                    info: &FsItemInfo) {
+                    info: &Box<FsItemInfo>) {
 
     // let files = dir_files.pop().unwrap();
     // stack.last_mut().unwrap().files = files;
@@ -229,7 +229,9 @@ fn handle_fs_item(stack: &mut FsStack,
     };
 }
 
-fn print_progress(overall: &OverallInfo, info: &FsItemInfo, progress_format: &ProgressFormat) {
+fn print_progress(overall: &OverallInfo,
+                  info: &Box<FsItemInfo>,
+                  progress_format: &ProgressFormat) {
     match *progress_format {
         ProgressFormat::Dot => print!("."),
         ProgressFormat::Path => {
@@ -240,7 +242,7 @@ fn print_progress(overall: &OverallInfo, info: &FsItemInfo, progress_format: &Pr
 }
 
 fn print_progress_if_needed(overall: &OverallInfo,
-                            info: &FsItemInfo,
+                            info: &Box<FsItemInfo>,
                             progress: &bool,
                             progress_count: &u64,
                             progress_format: &ProgressFormat)
