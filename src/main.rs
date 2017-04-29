@@ -101,9 +101,9 @@ fn create_thread(rx: RxChannel,
             match rx.recv() {
                 Ok(received) => {
                     let data: (MessageType, Option<FsItemInfo>) = received;
-                    let info = data.1.unwrap();
                     match data.0 {
                         MessageType::FsItem => {
+                            let info = data.1.unwrap();
                             handle_fs_item(&mut stack,
                                            &mut overall,
                                            &mut dir_files,
