@@ -232,7 +232,7 @@ fn print_progress(overall: &OverallInfo, info: &FsItemInfo, progress_format: &Pr
         ProgressFormat::Path => {
             println!("{} {}", overall.all(), info.path);
         }
-        ProgressFormat::Raw => println!("{:?}", info),
+        ProgressFormat::Raw => println!("{} {:?}", overall.all(), info),
     }
 }
 
