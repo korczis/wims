@@ -130,7 +130,7 @@ fn create_thread(rx: RxChannel,
 
 fn handle_dir_enter(stack: &mut FsStack,
                     overall: &mut OverallInfo,
-                    dir_files: &mut Vec<Vec<Box<FsItemInfo>>>,
+                    dir_files: &mut Vec<Box<Vec<Box<FsItemInfo>>>>,
                     info: &FsItemInfo,
                     progress: &bool,
                     progress_count: &u64,
@@ -140,7 +140,7 @@ fn handle_dir_enter(stack: &mut FsStack,
 
     let res = print_progress_if_needed(overall, info, progress, progress_count, progress_format);
 
-    dir_files.push(Vec::new());
+    dir_files.push(Box::new(Vec::new()));
 
     debug!("{:?}", info);
 
@@ -154,9 +154,10 @@ fn handle_dir_enter(stack: &mut FsStack,
 }
 
 fn handle_dir_leave(stack: &mut FsStack,
-                    dir_files: &mut Vec<Vec<Box<FsItemInfo>>>,
+                    _dir_files: &mut Vec<Box<Vec<Box<FsItemInfo>>>>,
                     info: &FsItemInfo) {
-    let files = dir_files.pop().unwrap();
+
+    // let files = dir_files.pop().unwrap();
     // stack.last_mut().unwrap().files = files;
     stack.last_mut().unwrap().calculate_files_size();
 
@@ -176,7 +177,7 @@ fn handle_exit(overall: &OverallInfo,
 }
 
 fn handle_file(overall: &mut OverallInfo,
-               _dir_files: &mut Vec<Vec<Box<FsItemInfo>>>,
+               _dir_files: &mut Vec<Box<Vec<Box<FsItemInfo>>>>,
                info: &Box<FsItemInfo>,
                progress: &bool,
                progress_count: &u64,
@@ -194,7 +195,7 @@ fn handle_file(overall: &mut OverallInfo,
 
 fn handle_fs_item(stack: &mut FsStack,
                   overall: &mut OverallInfo,
-                  dir_files: &mut Vec<Vec<Box<FsItemInfo>>>,
+                  dir_files: &mut Vec<Box<Vec<Box<FsItemInfo>>>>,
                   info: &Box<FsItemInfo>,
                   progress: &bool,
                   progress_count: &u64,
@@ -268,7 +269,7 @@ fn print_stats(info: &OverallInfo,
         0
     };
 
-    let fps = if elapsed_secs > 0.0 {
+    let ips = if elapsed_secs > 0.0 {
         (items_count as f64 / elapsed_secs) as u64
     } else {
         0
@@ -281,10 +282,10 @@ fn print_stats(info: &OverallInfo,
         };
     }
 
-    println!("Dirs: {}, Files: {}, Files Per Dir: {}, Time: {:.2}, Speed: {} fps",
+    println!("Dirs: {}, Files: {}, Files Per Dir: {}, Time: {:.2}, Speed: {} ips",
              dirs_count,
              files_count,
              fpd,
              elapsed_secs,
-             fps);
+             ips);
 }
