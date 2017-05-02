@@ -62,10 +62,10 @@ name = "wims"
 doc = false
 path = "src/main.rs"
 
-[[bin]]
-name = "crossbeam"
-doc = false
-path = "tmp/crossbeam.rs"
+# [[bin]]
+# name = "crossbeam"
+# doc = false
+# path = "tmp/crossbeam.rs"
 
 
 # Debug settings
