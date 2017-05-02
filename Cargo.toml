@@ -5,19 +5,27 @@ authors = ["Tomas Korcak <korczis@gmail.com>"]
 description = "Where Is My Space?"
 
 [dependencies]
+backtrace = "0.1"
+bincode = "*"
 clap = ">= 2.18"
+# clippy = "0.0.127"
 ctrlc = ">= 2.0"
+crossbeam = "*"
 env_logger = ">= 0.4"
 libc = ">= 0.2.16"
 log = ">= 0.3.6"
 memmap = "*"
+nom = "*"
 serde = "*"
 serde_codegen = "*"
 serde_derive = "*"
 serde_json = "*"
 serde-transcode = "*"
+strings = "*"
 string_cache = "*"
 string_cache_codegen = "*"
+suffix_tree = "*"
+stree_cmd = "*"
 # Optional
 ansi_term = "*"
 chomp = "*"
@@ -53,6 +61,12 @@ path = "src/lib.rs"
 name = "wims"
 doc = false
 path = "src/main.rs"
+
+[[bin]]
+name = "crossbeam"
+doc = false
+path = "tmp/crossbeam.rs"
+
 
 # Debug settings
 [profile.dev]
