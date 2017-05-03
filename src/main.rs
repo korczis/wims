@@ -18,8 +18,13 @@ use std::thread;
 use time::PreciseTime;
 use wims::*;
 
-mod path_cache;
-use self::path_cache::PathCache;
+use self::types::event_type::EventType;
+use self::types::dir_info::FsDirInfo;
+use self::types::item_info::FsItemInfo;
+use self::types::message_type::MessageType;
+use self::types::path_cache::{self, PathCache};
+use self::types::progress_format::ProgressFormat;
+use self::types::overall_info::OverallInfo;
 
 const AUTHOR: &'static str = env!("CARGO_PKG_AUTHORS");
 const DESCRIPTION: &'static str = env!("CARGO_PKG_DESCRIPTION");

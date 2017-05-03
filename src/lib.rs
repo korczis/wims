@@ -7,80 +7,14 @@ use std::io;
 use std::path::Path;
 use std::sync::mpsc;
 
-#[derive(Copy, Clone, Debug)]
-pub enum EventType {
-    DirEnter,
-    DirLeave,
-    File,
-}
+pub mod types;
 
-#[derive(Debug)]
-pub enum MessageType {
-    Exit,
-    FsItem,
-}
-
-#[derive(Debug)]
-pub enum ProgressFormat {
-    Dot,
-    Path,
-    Raw,
-}
-
-impl From<String> for ProgressFormat {
-    fn from(val: String) -> ProgressFormat {
-        let val = val.to_lowercase();
-        if val == String::from("path") {
-            ProgressFormat::Path
-        } else if val == String::from("raw") {
-            ProgressFormat::Raw
-        } else if val == String::from("dot") {
-            ProgressFormat::Dot
-        } else {
-            warn!("Invalid format specified - {:?} - using Progress::Dot", val);
-            ProgressFormat::Dot
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct FsItemInfo {
-    pub event_type: EventType,
-    pub path: String,
-    pub ino: u64,
-    pub mtime: i64,
-    pub size: u64,
-}
-
-#[derive(Debug)]
-pub struct FsDirInfo {
-    pub path: String,
-    // pub dirs: Vec<FsDirInfo>,
-    pub files: Vec<FsItemInfo>,
-    pub files_size: u64,
-}
-
-impl FsDirInfo {
-    pub fn calculate_files_size(&mut self) {
-        for file in self.files.iter() {
-            self.files_size += file.size;
-        }
-    }
-}
+use types::dir_info::FsDirInfo;
+use types::event_type::EventType;
+use types::item_info::FsItemInfo;
+use types::message_type::MessageType;
 
 pub type FsStack = Vec<FsDirInfo>;
-
-#[derive(Debug, Copy, Clone)]
-pub struct OverallInfo {
-    pub dirs: u64,
-    pub files: u64,
-}
-
-impl OverallInfo {
-    pub fn all(&self) -> u64 {
-        self.dirs + self.files
-    }
-}
 
 pub type RxChannel = mpsc::Receiver<(MessageType, Option<Box<FsItemInfo>>)>;
 pub type TxChannel = mpsc::Sender<(MessageType, Option<Box<FsItemInfo>>)>;
