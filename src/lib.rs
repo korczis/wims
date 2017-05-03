@@ -16,15 +16,14 @@ use types::message_type::MessageType;
 
 pub type FsStack = Vec<FsDirInfo>;
 
-pub type RxChannel = mpsc::Receiver<(MessageType, Option<Box<FsItemInfo>>)>;
-pub type TxChannel = mpsc::Sender<(MessageType, Option<Box<FsItemInfo>>)>;
+pub type RxChannel = mpsc::Receiver<(MessageType, Option<String>, Option<Box<FsItemInfo>>)>;
+pub type TxChannel = mpsc::Sender<(MessageType, Option<String>, Option<Box<FsItemInfo>>)>;
 
-pub fn get_file_info(event_type: &EventType, path: &Path, entry: &DirEntry) -> Box<FsItemInfo> {
+pub fn get_file_info(event_type: &EventType, entry: &DirEntry) -> Box<FsItemInfo> {
     let md = Box::new(entry.metadata().unwrap()) as Box<std::os::unix::fs::MetadataExt>;
 
     Box::new(FsItemInfo {
         event_type: *event_type,
-        path: path.to_str().unwrap().to_string(),
         ino: md.ino(),
         mtime: md.mtime(),
         size: md.size(),
@@ -42,14 +41,15 @@ pub fn visit_dir(tx: &TxChannel, dir: &Path) -> io::Result<()> {
 
     let metadata = fs::symlink_metadata(dir)?;
     let file_type = metadata.file_type();
+    let dir_path = dir.to_str().unwrap().to_string();
 
     if dir.is_dir() && !file_type.is_symlink() {
         let dir_meta = Box::new(dir.metadata().unwrap()) as Box<std::os::unix::fs::MetadataExt>;
 
         let _ = tx.send((MessageType::FsItem,
+                         Some(dir_path.clone()),
                          Some(Box::new(FsItemInfo {
             event_type: EventType::DirEnter,
-            path: dir.to_str().unwrap().to_string(),
             ino: dir_meta.ino(),
             mtime: dir_meta.mtime(),
             size: dir_meta.size(),
@@ -68,18 +68,19 @@ pub fn visit_dir(tx: &TxChannel, dir: &Path) -> io::Result<()> {
                     } else if path.is_file() {
                         debug!("Processing file: {:?}", &path);
 
-                        let _ =
-                            tx.send((MessageType::FsItem,
-                                     Some(self::get_file_info(&EventType::File, &path, &entry))));
+                        let file_path = path.to_str().unwrap().to_string();
+                        let _ = tx.send((MessageType::FsItem,
+                                         Some(file_path.clone()),
+                                         Some(self::get_file_info(&EventType::File, &entry))));
                     }
                 }
             }
         }
 
         let _ = tx.send((MessageType::FsItem,
+                         Some(dir_path.clone()),
                          Some(Box::new(FsItemInfo {
             event_type: EventType::DirLeave,
-            path: dir.to_str().unwrap().to_string(),
             ino: dir_meta.ino(),
             mtime: dir_meta.mtime(),
             size: dir_meta.size(),

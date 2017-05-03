@@ -80,7 +80,7 @@ fn main() {
     let dirs: Vec<_> = matches.values_of("DIR").unwrap().collect();
     wims::process(&tx, &dirs);
 
-    let _ = tx.send((MessageType::Exit, None));
+    let _ = tx.send((MessageType::Exit, None, None));
     let _ = handle.join();
 }
 
@@ -106,15 +106,16 @@ fn create_thread(rx: RxChannel,
         loop {
             match rx.recv() {
                 Ok(received) => {
-                    let data: (MessageType, Option<Box<FsItemInfo>>) = received;
+                    let data: (MessageType, Option<String>, Option<Box<FsItemInfo>>) = received;
                     match data.0 {
                         MessageType::FsItem => {
-                            let info = data.1.unwrap();
+                            let info = data.2.unwrap();
                             // items.push(info.clone());
                             handle_fs_item(&mut stack,
                                            &mut pc,
                                            &mut overall,
                                            &mut dir_files,
+                                           data.1.unwrap(),
                                            info,
                                            &progress,
                                            &progress_count,
@@ -122,6 +123,12 @@ fn create_thread(rx: RxChannel,
                                            &mut stdout);
                         }
                         MessageType::Exit => {
+                            for (k, v) in pc.iter_mut() {
+                                println!("Calculating {:?}", k);
+                                v.calculate_size();
+                                println!("{:?}", v.total_size());
+                            }
+
                             handle_exit(&overall, &start, &progress, &progress_format);
                             break;
                         }
@@ -139,6 +146,7 @@ fn handle_dir_enter(stack: &mut FsStack,
                     pc: &mut BTreeMap<String, PathCacheInfo>,
                     overall: &mut OverallInfo,
                     dir_files: &mut Vec<Box<Vec<Box<FsItemInfo>>>>,
+                    path: &String,
                     info: &Box<FsItemInfo>,
                     progress: &bool,
                     progress_count: &u64,
@@ -146,23 +154,27 @@ fn handle_dir_enter(stack: &mut FsStack,
                     -> bool {
     overall.dirs += 1;
 
-    let mut parts = info.path
-        .split("/")
+    let mut parts = path.split("/")
         .map(|i| i.to_string())
         .collect::<Vec<String>>();
     parts.reverse();
 
-    path_cache::construct(pc, &mut parts, &0);
+    path_cache::construct(pc, &mut parts, &info.clone());
     // path_cache::print(&pc, 0);
 
-    let res = print_progress_if_needed(overall, info, progress, progress_count, progress_format);
+    let res = print_progress_if_needed(overall,
+                                       path,
+                                       info,
+                                       progress,
+                                       progress_count,
+                                       progress_format);
 
     dir_files.push(Box::new(Vec::new()));
 
     debug!("{:?}", info);
 
     stack.push(FsDirInfo {
-        path: info.path.clone(),
+        path: path.clone(),
         files: Vec::new(),
         files_size: 0,
     });
@@ -172,13 +184,14 @@ fn handle_dir_enter(stack: &mut FsStack,
 
 fn handle_dir_leave(stack: &mut FsStack,
                     dir_files: &mut Vec<Box<Vec<Box<FsItemInfo>>>>,
-                    info: &Box<FsItemInfo>) {
+                    path: &String,
+                    _info: &Box<FsItemInfo>) {
 
     let _files = dir_files.pop().unwrap();
     // stack.last_mut().unwrap().files = files;
     stack.last_mut().unwrap().calculate_files_size();
 
-    debug!("Stack when leaving {}: {:?}", info.path, stack);
+    debug!("Stack when leaving {}: {:?}", path, stack);
     stack.pop();
 }
 
@@ -195,6 +208,7 @@ fn handle_exit(overall: &OverallInfo,
 fn handle_file(pc: &mut BTreeMap<String, PathCacheInfo>,
                overall: &mut OverallInfo,
                dir_files: &mut Vec<Box<FsItemInfo>>,
+               path: &String,
                info: Box<FsItemInfo>,
                progress: &bool,
                progress_count: &u64,
@@ -202,16 +216,20 @@ fn handle_file(pc: &mut BTreeMap<String, PathCacheInfo>,
                -> bool {
     overall.files += 1;
 
-    let mut parts = info.path
-        .split("/")
+    let mut parts = path.split("/")
         .map(|i| i.to_string())
         .collect::<Vec<String>>();
     parts.reverse();
 
-    path_cache::construct(pc, &mut parts, &0);
+    path_cache::construct(pc, &mut parts, &info.clone());
     // path_cache::print(&pc, 0);
 
-    let res = print_progress_if_needed(overall, &info, progress, progress_count, progress_format);
+    let res = print_progress_if_needed(overall,
+                                       &path,
+                                       &info,
+                                       progress,
+                                       progress_count,
+                                       progress_format);
 
     debug!("{:?}", info);
     dir_files.push(info);
@@ -223,6 +241,7 @@ fn handle_fs_item(stack: &mut FsStack,
                   pc: &mut BTreeMap<String, PathCacheInfo>,
                   overall: &mut OverallInfo,
                   dir_files: &mut Vec<Box<Vec<Box<FsItemInfo>>>>,
+                  path: String,
                   info: Box<FsItemInfo>,
                   progress: &bool,
                   progress_count: &u64,
@@ -234,6 +253,7 @@ fn handle_fs_item(stack: &mut FsStack,
                                 pc,
                                 overall,
                                 dir_files,
+                                &path,
                                 &info,
                                 &progress,
                                 &progress_count,
@@ -242,12 +262,13 @@ fn handle_fs_item(stack: &mut FsStack,
             }
         }
         EventType::DirLeave => {
-            handle_dir_leave(stack, dir_files, &info);
+            handle_dir_leave(stack, dir_files, &path, &info);
         }
         EventType::File => {
             if handle_file(pc,
                            overall,
                            dir_files.last_mut().unwrap(),
+                           &path,
                            info,
                            &progress,
                            &progress_count,
@@ -259,25 +280,27 @@ fn handle_fs_item(stack: &mut FsStack,
 }
 
 fn print_progress(overall: &OverallInfo,
+                  path: &String,
                   info: &Box<FsItemInfo>,
                   progress_format: &ProgressFormat) {
     match *progress_format {
         ProgressFormat::Dot => print!("."),
         ProgressFormat::Path => {
-            println!("{} {}", overall.all(), info.path);
+            println!("{} {}", overall.all(), path);
         }
         ProgressFormat::Raw => println!("{} {:?}", overall.all(), info),
     }
 }
 
 fn print_progress_if_needed(overall: &OverallInfo,
+                            path: &String,
                             info: &Box<FsItemInfo>,
                             progress: &bool,
                             progress_count: &u64,
                             progress_format: &ProgressFormat)
                             -> bool {
     if *progress && (overall.all() % progress_count) == 0 {
-        print_progress(&overall, &info, &progress_format);
+        print_progress(&overall, &path, &info, &progress_format);
         true
 
     } else {
