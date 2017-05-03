@@ -18,13 +18,7 @@ use std::thread;
 use time::PreciseTime;
 use wims::*;
 
-use self::types::event_type::EventType;
-use self::types::dir_info::FsDirInfo;
-use self::types::item_info::FsItemInfo;
-use self::types::message_type::MessageType;
-use self::types::path_cache::{self, PathCache};
-use self::types::progress_format::ProgressFormat;
-use self::types::overall_info::OverallInfo;
+use self::types::*;
 
 const AUTHOR: &'static str = env!("CARGO_PKG_AUTHORS");
 const DESCRIPTION: &'static str = env!("CARGO_PKG_DESCRIPTION");
@@ -107,7 +101,7 @@ fn create_thread(rx: RxChannel,
 
         let mut stack = FsStack::new();
         let mut dir_files = Vec::new();
-        let mut pc: BTreeMap<String, PathCache<usize>> = BTreeMap::new();
+        let mut pc: BTreeMap<String, PathCacheInfo> = BTreeMap::new();
 
         loop {
             match rx.recv() {
@@ -142,7 +136,7 @@ fn create_thread(rx: RxChannel,
 }
 
 fn handle_dir_enter(stack: &mut FsStack,
-                    pc: &mut BTreeMap<String, PathCache<usize>>,
+                    pc: &mut BTreeMap<String, PathCacheInfo>,
                     overall: &mut OverallInfo,
                     dir_files: &mut Vec<Box<Vec<Box<FsItemInfo>>>>,
                     info: &Box<FsItemInfo>,
@@ -198,7 +192,7 @@ fn handle_exit(overall: &OverallInfo,
     print_stats(&overall, elapsed_secs, progress, progress_format);
 }
 
-fn handle_file(pc: &mut BTreeMap<String, PathCache<usize>>,
+fn handle_file(pc: &mut BTreeMap<String, PathCacheInfo>,
                overall: &mut OverallInfo,
                dir_files: &mut Vec<Box<FsItemInfo>>,
                info: Box<FsItemInfo>,
@@ -226,7 +220,7 @@ fn handle_file(pc: &mut BTreeMap<String, PathCache<usize>>,
 }
 
 fn handle_fs_item(stack: &mut FsStack,
-                  pc: &mut BTreeMap<String, PathCache<usize>>,
+                  pc: &mut BTreeMap<String, PathCacheInfo>,
                   overall: &mut OverallInfo,
                   dir_files: &mut Vec<Box<Vec<Box<FsItemInfo>>>>,
                   info: Box<FsItemInfo>,

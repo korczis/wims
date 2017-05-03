@@ -11,6 +11,8 @@ pub struct PathCache<T>
     pub data: Option<T>,
 }
 
+pub type PathCacheInfo = PathCache<usize>;
+
 impl<T> Eq for PathCache<T> where T: Clone + Copy + Debug {}
 
 impl<T> Ord for PathCache<T>
@@ -36,14 +38,6 @@ impl<T> PartialOrd for PathCache<T>
         Some(self.cmp(other))
     }
 }
-
-// impl<T> Display for PathCache<T>
-//     where T: Clone + Copy + Debug
-// {
-//     fn fmt(&self, f: &mut Formatter) -> Result<(), fmt::Error> {
-//         write!(f, "kokot")
-//     }
-// }
 
 pub fn construct<T>(pc: &mut BTreeMap<String, PathCache<T>>, parts: &mut Vec<String>, data: &T)
     where T: Clone + Copy + Debug
@@ -89,15 +83,6 @@ pub fn merge<T>(left: &mut BTreeMap<String, PathCache<T>>,
                 right: &mut BTreeMap<String, PathCache<T>>)
     where T: Clone + Copy + Debug
 {
-    // println!("LEFT");
-    // println!("{:?}", &left);
-    // print(left, 0);
-
-    // println!("RIGHT");
-    // println!("{:?}", &right);
-    // print(right, 0);
-
-    // println!("MERGING");
     for (k, v) in right.iter_mut() {
         if !left.contains_key(k) {
             left.insert(k.clone(), v.clone());
@@ -113,18 +98,7 @@ pub fn merge<T>(left: &mut BTreeMap<String, PathCache<T>>,
                           v.childs.as_mut().unwrap());
                 }
             }
-
-            // if !left_has_childs {
-            //     left.get_mut(k).unwrap().childs = v.childs.clone();
-            // } else {
-            //     merge(left.get_mut(k).unwrap().childs.as_mut().unwrap(), v.childs.unw);
-            // }
         }
-
-        // if let Some(childs) = v.childs.as_mut() {
-        //     // merge(left.get_mut(k).unwrap().childs.as_mut().unwrap(), childs);
-        // }
-        // println!("{:?}, {:?}", k, v);
     }
 }
 
