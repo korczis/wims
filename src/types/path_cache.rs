@@ -13,11 +13,11 @@ pub struct PathCache<T>
     where T: Clone + Copy + Debug + ItemSize + Serialize
 {
     pub path: String,
-    pub childs: Option<BTreeMap<String, PathCache<T>>>,
     pub data: Option<T>,
     pub dirs_size: u64,
     pub files_size: u64,
     pub total_size: u64,
+    pub childs: Option<BTreeMap<String, PathCache<T>>>,
 }
 
 impl<T> PathCache<T>
@@ -138,10 +138,10 @@ impl<T> Serialize for PathCache<T>
         let mut s = serializer.serialize_struct("PathCache", 5)?;
         s.serialize_field("path", &self.path)?;
         s.serialize_field("data", &self.data)?;
-        s.serialize_field("childs", &self.childs)?;
         s.serialize_field("dirs_size", &self.dirs_size)?;
         s.serialize_field("files_size", &self.files_size)?;
         s.serialize_field("total_size", &self.total_size)?;
+        s.serialize_field("childs", &self.childs)?;
         s.end()
     }
 }
