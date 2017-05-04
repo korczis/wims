@@ -1,3 +1,5 @@
+use serde::ser::{Serialize, Serializer, SerializeStruct};
+
 use super::event_type::EventType;
 
 pub trait ItemSize {
@@ -20,5 +22,17 @@ impl ItemSize for FsItemInfo {
 
     fn size(&self) -> u64 {
         self.size
+    }
+}
+
+impl Serialize for FsItemInfo {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where S: Serializer
+    {
+        let mut s = serializer.serialize_struct("FsItemInfo", 3)?;
+        s.serialize_field("ino", &self.ino)?;
+        s.serialize_field("mtime", &self.mtime)?;
+        s.serialize_field("size", &self.size)?;
+        s.end()
     }
 }

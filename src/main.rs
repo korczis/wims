@@ -4,10 +4,11 @@ extern crate env_logger;
 
 extern crate bincode;
 extern crate clap;
+extern crate serde;
 extern crate wims;
 extern crate time;
 
-// use bincode::{serialize, deserialize, Bounded};
+use bincode::{serialize, deserialize, Infinite};
 use clap::{App, Arg};
 use std::collections::BTreeMap;
 use std::io;
@@ -137,6 +138,9 @@ fn create_thread(rx: RxChannel,
                 _ => {}
             }
         }
+
+        let encoded: Vec<u8> = serialize(&pc, Infinite).unwrap();
+        println!("{:?}", encoded);
 
         // println!("{:?}", pc);
     })

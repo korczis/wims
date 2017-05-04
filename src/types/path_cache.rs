@@ -1,3 +1,5 @@
+use serde::ser::{Serialize, Serializer, SerializeStruct};
+
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::fmt::Debug;
@@ -8,7 +10,7 @@ use super::item_info::ItemSize;
 
 #[derive(Debug, Clone)]
 pub struct PathCache<T>
-    where T: Clone + Copy + Debug + ItemSize
+    where T: Clone + Copy + Debug + ItemSize + Serialize
 {
     pub path: String,
     pub childs: Option<BTreeMap<String, PathCache<T>>>,
@@ -19,7 +21,7 @@ pub struct PathCache<T>
 }
 
 impl<T> PathCache<T>
-    where T: Clone + Copy + Debug + ItemSize
+    where T: Clone + Copy + Debug + ItemSize + Serialize
 {
     pub fn dirs_size(&self) -> u64 {
         self.dirs_size
@@ -58,10 +60,10 @@ impl<T> PathCache<T>
 
 pub type PathCacheInfo = PathCache<FsItemInfo>;
 
-impl<T> Eq for PathCache<T> where T: Clone + Copy + Debug + ItemSize {}
+impl<T> Eq for PathCache<T> where T: Clone + Copy + Debug + ItemSize + Serialize {}
 
 impl<T> Ord for PathCache<T>
-    where T: Clone + Copy + Debug + ItemSize
+    where T: Clone + Copy + Debug + ItemSize + Serialize
 {
     fn cmp(&self, other: &PathCache<T>) -> Ordering {
         self.path.cmp(&other.path)
@@ -69,7 +71,7 @@ impl<T> Ord for PathCache<T>
 }
 
 impl<T> PartialEq for PathCache<T>
-    where T: Clone + Copy + Debug + ItemSize
+    where T: Clone + Copy + Debug + ItemSize + Serialize
 {
     fn eq(&self, other: &PathCache<T>) -> bool {
         self.path == other.path
@@ -77,7 +79,7 @@ impl<T> PartialEq for PathCache<T>
 }
 
 impl<T> PartialOrd for PathCache<T>
-    where T: Clone + Copy + Debug + ItemSize
+    where T: Clone + Copy + Debug + ItemSize + Serialize
 {
     fn partial_cmp(&self, other: &PathCache<T>) -> Option<Ordering> {
         Some(self.cmp(other))
@@ -85,7 +87,7 @@ impl<T> PartialOrd for PathCache<T>
 }
 
 pub fn construct<T>(pc: &mut BTreeMap<String, PathCache<T>>, parts: &mut Vec<String>, data: &T)
-    where T: Clone + Copy + Debug + ItemSize
+    where T: Clone + Copy + Debug + ItemSize + Serialize
 {
     if let Some(part) = parts.pop() {
         let node_data = if parts.len() == 0 {
@@ -127,9 +129,26 @@ pub fn construct<T>(pc: &mut BTreeMap<String, PathCache<T>>, parts: &mut Vec<Str
     }
 }
 
+impl<T> Serialize for PathCache<T>
+    where T: Clone + Copy + Debug + ItemSize + Serialize
+{
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where S: Serializer
+    {
+        let mut s = serializer.serialize_struct("PathCache", 5)?;
+        s.serialize_field("path", &self.path)?;
+        s.serialize_field("data", &self.data)?;
+        s.serialize_field("childs", &self.childs)?;
+        s.serialize_field("dirs_size", &self.dirs_size)?;
+        s.serialize_field("files_size", &self.files_size)?;
+        s.serialize_field("total_size", &self.total_size)?;
+        s.end()
+    }
+}
+
 pub fn merge<T>(left: &mut BTreeMap<String, PathCache<T>>,
                 right: &mut BTreeMap<String, PathCache<T>>)
-    where T: Clone + Copy + Debug + ItemSize
+    where T: Clone + Copy + Debug + ItemSize + Serialize
 {
     for (k, v) in right.iter_mut() {
         if !left.contains_key(k) {
@@ -151,7 +170,7 @@ pub fn merge<T>(left: &mut BTreeMap<String, PathCache<T>>,
 }
 
 pub fn print<T>(pc: &BTreeMap<String, PathCache<T>>, depth: usize)
-    where T: Clone + Copy + Debug + ItemSize
+    where T: Clone + Copy + Debug + ItemSize + Serialize
 {
     for (_k, ref v) in pc {
         print!("{}", String::from("  ").repeat(depth));
