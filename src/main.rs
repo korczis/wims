@@ -57,6 +57,8 @@ fn main() {
             .multiple(true))
         .get_matches();
 
+    let opts = Options::from(&matches);
+
     match matches.occurrences_of("verbose") {
         0 => {}
         1 => env::set_var("RUST_LOG", "warn"),
@@ -67,16 +69,7 @@ fn main() {
     env_logger::init().unwrap();
 
     let (tx, rx) = mpsc::channel();
-    let handle = create_thread(rx,
-                               matches.is_present("progress"),
-                               matches.value_of("progress-count")
-                                   .unwrap()
-                                   .to_string()
-                                   .parse::<u64>()
-                                   .unwrap_or(10000),
-                               ProgressFormat::from(matches.value_of("progress-format")
-                                   .unwrap()
-                                   .to_string()));
+    let handle = create_thread(rx, &opts);
 
     let dirs: Vec<_> = matches.values_of("DIR").unwrap().collect();
     wims::process(&tx, &dirs);
@@ -85,14 +78,11 @@ fn main() {
     let _ = handle.join();
 }
 
-fn create_thread(rx: RxChannel,
-                 progress: bool,
-                 progress_count: u64,
-                 progress_format: ProgressFormat)
-                 -> thread::JoinHandle<()> {
-
+fn create_thread(rx: RxChannel, opts: &Options) -> thread::JoinHandle<()> {
     let mut stdout = io::stdout();
     let start = PreciseTime::now();
+
+    let opts = opts.clone();
 
     thread::spawn(move || {
         let mut overall = OverallInfo {
@@ -118,9 +108,7 @@ fn create_thread(rx: RxChannel,
                                            &mut dir_files,
                                            data.1.unwrap(),
                                            info,
-                                           &progress,
-                                           &progress_count,
-                                           &progress_format,
+                                           &opts,
                                            &mut stdout);
                         }
                         MessageType::Exit => {
@@ -130,7 +118,7 @@ fn create_thread(rx: RxChannel,
                                 println!("{:?}", v.total_size());
                             }
 
-                            handle_exit(&overall, &start, &progress, &progress_format);
+                            handle_exit(&overall, &start, &opts);
                             break;
                         }
                     };
@@ -152,9 +140,7 @@ fn handle_dir_enter(stack: &mut FsStack,
                     dir_files: &mut Vec<Box<Vec<Box<FsItemInfo>>>>,
                     path: &String,
                     info: &Box<FsItemInfo>,
-                    progress: &bool,
-                    progress_count: &u64,
-                    progress_format: &ProgressFormat)
+                    opts: &Options)
                     -> bool {
     overall.dirs += 1;
 
@@ -166,12 +152,7 @@ fn handle_dir_enter(stack: &mut FsStack,
     path_cache::construct(pc, &mut parts, &info.clone());
     // path_cache::print(&pc, 0);
 
-    let res = print_progress_if_needed(overall,
-                                       path,
-                                       info,
-                                       progress,
-                                       progress_count,
-                                       progress_format);
+    let res = print_progress_if_needed(overall, path, info, opts);
 
     dir_files.push(Box::new(Vec::new()));
 
@@ -199,14 +180,11 @@ fn handle_dir_leave(stack: &mut FsStack,
     stack.pop();
 }
 
-fn handle_exit(overall: &OverallInfo,
-               start: &PreciseTime,
-               progress: &bool,
-               progress_format: &ProgressFormat) {
+fn handle_exit(overall: &OverallInfo, start: &PreciseTime, opts: &Options) {
     let diff = start.to(PreciseTime::now());
     let elapsed_secs = diff.num_nanoseconds().unwrap() as f64 * 1e-9;
 
-    print_stats(&overall, elapsed_secs, progress, progress_format);
+    print_stats(&overall, elapsed_secs, &opts);
 }
 
 fn handle_file(pc: &mut BTreeMap<String, PathCacheInfo>,
@@ -214,9 +192,7 @@ fn handle_file(pc: &mut BTreeMap<String, PathCacheInfo>,
                dir_files: &mut Vec<Box<FsItemInfo>>,
                path: &String,
                info: Box<FsItemInfo>,
-               progress: &bool,
-               progress_count: &u64,
-               progress_format: &ProgressFormat)
+               opts: &Options)
                -> bool {
     overall.files += 1;
 
@@ -228,12 +204,7 @@ fn handle_file(pc: &mut BTreeMap<String, PathCacheInfo>,
     path_cache::construct(pc, &mut parts, &info.clone());
     // path_cache::print(&pc, 0);
 
-    let res = print_progress_if_needed(overall,
-                                       &path,
-                                       &info,
-                                       progress,
-                                       progress_count,
-                                       progress_format);
+    let res = print_progress_if_needed(overall, &path, &info, &opts);
 
     debug!("{:?}", info);
     dir_files.push(info);
@@ -247,21 +218,11 @@ fn handle_fs_item(stack: &mut FsStack,
                   dir_files: &mut Vec<Box<Vec<Box<FsItemInfo>>>>,
                   path: String,
                   info: Box<FsItemInfo>,
-                  progress: &bool,
-                  progress_count: &u64,
-                  progress_format: &ProgressFormat,
+                  opts: &Options,
                   stdout: &mut io::Stdout) {
     match info.event_type {
         EventType::DirEnter => {
-            if handle_dir_enter(stack,
-                                pc,
-                                overall,
-                                dir_files,
-                                &path,
-                                &info,
-                                &progress,
-                                &progress_count,
-                                &progress_format) {
+            if handle_dir_enter(stack, pc, overall, dir_files, &path, &info, &opts) {
                 let _ = stdout.flush();
             }
         }
@@ -274,20 +235,15 @@ fn handle_fs_item(stack: &mut FsStack,
                            dir_files.last_mut().unwrap(),
                            &path,
                            info,
-                           &progress,
-                           &progress_count,
-                           &progress_format) {
+                           &opts) {
                 let _ = stdout.flush();
             }
         }
     };
 }
 
-fn print_progress(overall: &OverallInfo,
-                  path: &String,
-                  info: &Box<FsItemInfo>,
-                  progress_format: &ProgressFormat) {
-    match *progress_format {
+fn print_progress(overall: &OverallInfo, path: &String, info: &Box<FsItemInfo>, opts: &Options) {
+    match opts.progress_format {
         ProgressFormat::Dot => print!("."),
         ProgressFormat::Path => {
             println!("{} {}", overall.all(), path);
@@ -299,12 +255,10 @@ fn print_progress(overall: &OverallInfo,
 fn print_progress_if_needed(overall: &OverallInfo,
                             path: &String,
                             info: &Box<FsItemInfo>,
-                            progress: &bool,
-                            progress_count: &u64,
-                            progress_format: &ProgressFormat)
+                            opts: &Options)
                             -> bool {
-    if *progress && (overall.all() % progress_count) == 0 {
-        print_progress(&overall, &path, &info, &progress_format);
+    if opts.print_progress && (overall.all() % opts.progress_count) == 0 {
+        print_progress(&overall, &path, &info, &opts);
         true
 
     } else {
@@ -312,11 +266,7 @@ fn print_progress_if_needed(overall: &OverallInfo,
     }
 }
 
-fn print_stats(info: &OverallInfo,
-               elapsed_secs: f64,
-               progress: &bool,
-               progress_format: &ProgressFormat) {
-
+fn print_stats(info: &OverallInfo, elapsed_secs: f64, opts: &Options) {
     let dirs_count = info.dirs;
     let files_count = info.files;
     let items_count = info.all();
@@ -333,8 +283,8 @@ fn print_stats(info: &OverallInfo,
         0.0
     };
 
-    if *progress {
-        match *progress_format {
+    if opts.print_progress {
+        match opts.progress_format {
             ProgressFormat::Dot => println!(""),
             _ => {}
         };
