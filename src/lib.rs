@@ -33,7 +33,7 @@ pub fn get_file_info(event_type: &EventType, entry: &DirEntry) -> Box<FsItemInfo
     })
 }
 
-pub fn process(tx: &TxChannel, dirs: &Vec<&str>) {
+pub fn process(tx: &TxChannel, dirs: &Vec<String>) {
     for dir in dirs.iter() {
         let _ = self::visit_dir(tx, Path::new(dir));
     }
@@ -44,51 +44,53 @@ pub fn visit_dir(tx: &TxChannel, dir: &Path) -> io::Result<()> {
 
     let metadata = fs::symlink_metadata(dir)?;
     let file_type = metadata.file_type();
+
+    if !dir.is_dir() || file_type.is_symlink() {
+        return Ok(());
+    }
+
     let dir_path = dir.to_str().unwrap().to_string();
+    let dir_meta = Box::new(dir.metadata().unwrap()) as Box<std::os::unix::fs::MetadataExt>;
 
-    if dir.is_dir() && !file_type.is_symlink() {
-        let dir_meta = Box::new(dir.metadata().unwrap()) as Box<std::os::unix::fs::MetadataExt>;
+    let _ = tx.send((MessageType::FsItem,
+                     Some(dir_path.clone()),
+                     Some(Box::new(FsItemInfo {
+        event_type: EventType::DirEnter,
+        ino: dir_meta.ino(),
+        mtime: dir_meta.mtime(),
+        size: dir_meta.size(),
+    }))));
 
-        let _ = tx.send((MessageType::FsItem,
-                         Some(dir_path.clone()),
-                         Some(Box::new(FsItemInfo {
-            event_type: EventType::DirEnter,
-            ino: dir_meta.ino(),
-            mtime: dir_meta.mtime(),
-            size: dir_meta.size(),
-        }))));
+    if let Ok(entries) = fs::read_dir(dir) {
+        for entry in entries {
+            debug!("Processing entry {:?}", entry);
 
-        if let Ok(entries) = fs::read_dir(dir) {
-            for entry in entries {
-                debug!("Processing entry {:?}", entry);
+            if let Ok(entry) = entry {
+                let path = entry.path();
+                if path.is_dir() {
+                    debug!("Processing directory: {:?}", &path);
+                    let _ = self::visit_dir(tx, &path);
 
-                if let Ok(entry) = entry {
-                    let path = entry.path();
-                    if path.is_dir() {
-                        debug!("Processing directory: {:?}", &path);
-                        let _ = self::visit_dir(tx, &path);
+                } else if path.is_file() {
+                    debug!("Processing file: {:?}", &path);
 
-                    } else if path.is_file() {
-                        debug!("Processing file: {:?}", &path);
-
-                        let file_path = path.to_str().unwrap().to_string();
-                        let _ = tx.send((MessageType::FsItem,
-                                         Some(file_path.clone()),
-                                         Some(self::get_file_info(&EventType::File, &entry))));
-                    }
+                    let file_path = path.to_str().unwrap().to_string();
+                    let _ = tx.send((MessageType::FsItem,
+                                     Some(file_path.clone()),
+                                     Some(self::get_file_info(&EventType::File, &entry))));
                 }
             }
         }
-
-        let _ = tx.send((MessageType::FsItem,
-                         Some(dir_path.clone()),
-                         Some(Box::new(FsItemInfo {
-            event_type: EventType::DirLeave,
-            ino: dir_meta.ino(),
-            mtime: dir_meta.mtime(),
-            size: dir_meta.size(),
-        }))));
     }
+
+    let _ = tx.send((MessageType::FsItem,
+                     Some(dir_path.clone()),
+                     Some(Box::new(FsItemInfo {
+        event_type: EventType::DirLeave,
+        ino: dir_meta.ino(),
+        mtime: dir_meta.mtime(),
+        size: dir_meta.size(),
+    }))));
 
     debug!("Leaving directory {:?}", dir);
     Ok(())

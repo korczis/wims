@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use std::fmt::Debug;
 
 use super::event_type::EventType;
+use super::formatter::human_format;
 use super::item_info::FsItemInfo;
 use super::item_info::ItemSize;
 
@@ -169,14 +170,47 @@ pub fn merge<T>(left: &mut BTreeMap<String, PathCache<T>>,
     }
 }
 
-pub fn print<T>(pc: &BTreeMap<String, PathCache<T>>, depth: usize)
+fn human_format_if_needed(size: u64, human_readable: bool) -> String {
+    match human_readable {
+        true => {
+            let (val, unit) = human_format(size as f32);
+            if val == val.floor() {
+                format!("{}{}B", val as u64, unit)
+            } else {
+                format!("{:.2}{}B", val, unit)
+            }
+
+        }
+        false => format!("{}", size),
+    }
+}
+
+pub fn print<T>(pc: &BTreeMap<String, PathCache<T>>, depth: usize, human_readable: bool)
     where T: Clone + Copy + Debug + ItemSize + Serialize
 {
     for (_k, ref v) in pc {
+        // print!("{:?}", v);
+
         print!("{}", String::from("  ").repeat(depth));
-        println!("{}", v.path);
+        if let Some(data) = v.data {
+            let size = match data.event_type() {
+                &EventType::DirEnter => {
+                    format!("{} / {} / {}",
+                            human_format_if_needed(v.files_size(), human_readable),
+                            human_format_if_needed(v.dirs_size(), human_readable),
+                            human_format_if_needed(v.total_size(), human_readable))
+                }
+                &EventType::File => human_format_if_needed(data.size(), human_readable),
+                _ => format!(""),
+            };
+
+            println!("{} ({})", v.path, size);
+        } else {
+            println!("{}", v.path);
+        }
+
         if v.childs != None {
-            print(v.childs.as_ref().unwrap(), depth + 1);
+            print(v.childs.as_ref().unwrap(), depth + 1, human_readable);
         }
     }
 }

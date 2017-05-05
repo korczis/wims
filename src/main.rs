@@ -8,7 +8,7 @@ extern crate serde;
 extern crate wims;
 extern crate time;
 
-use bincode::{serialize, deserialize, Infinite};
+use bincode::{serialize, Infinite};
 use clap::{App, Arg};
 use std::collections::BTreeMap;
 use std::io;
@@ -35,6 +35,13 @@ fn main() {
             .short("v")
             .long("verbose")
             .multiple(true))
+        .arg(Arg::with_name("cache")
+            .help("Cache items to disk")
+            .long("cache"))
+        .arg(Arg::with_name("human")
+            .help("Human readable sizes")
+            .short("h")
+            .long("human"))
         .arg(Arg::with_name("progress")
             .help("Show progress")
             .short("p")
@@ -50,10 +57,18 @@ fn main() {
             .long("progress-format")
             .possible_values(&["dot", "path", "raw"])
             .default_value("path"))
+        .arg(Arg::with_name("stats")
+            .help("Print overall stats at exit")
+            .short("s")
+            .long("stats"))
+        .arg(Arg::with_name("tree")
+            .help("Show FS tree")
+            .short("t")
+            .long("tree"))
         .arg(Arg::with_name("DIR")
             .help("Directories to process")
             .index(1)
-            .required(true)
+            .required(false)
             .multiple(true))
         .get_matches();
 
@@ -71,7 +86,11 @@ fn main() {
     let (tx, rx) = mpsc::channel();
     let handle = create_thread(rx, &opts);
 
-    let dirs: Vec<_> = matches.values_of("DIR").unwrap().collect();
+    let dirs: Vec<_> = match matches.values_of("DIR") {
+        Some(dirs) => dirs.map(|d| d.trim_right_matches('/').to_string()).collect(),
+        _ => vec![String::from(".")],
+    };
+
     wims::process(&tx, &dirs);
 
     let _ = tx.send((MessageType::Exit, None, None));
@@ -113,9 +132,21 @@ fn create_thread(rx: RxChannel, opts: &Options) -> thread::JoinHandle<()> {
                         }
                         MessageType::Exit => {
                             for (k, v) in pc.iter_mut() {
-                                println!("Calculating {:?}", k);
+                                debug!("Calculating {:?}", k);
                                 v.calculate_size();
-                                println!("{:?}", v.total_size());
+                                debug!("Calculated total_size of topmost directory is {:?}",
+                                       v.total_size());
+                            }
+
+                            if opts.cache.enabled {
+                                let encoded: Vec<u8> = serialize(&pc, Infinite).unwrap();
+                                println!("{:?}", encoded);
+
+                                // let decoded: Option<BTreeMap<String, PathCacheInfo>> = deserialize(&encoded[..]).unwrap();
+                            }
+
+                            if opts.tree.enabled {
+                                print(&pc, 0, opts.human.enabled);
                             }
 
                             handle_exit(&overall, &start, &opts);
@@ -126,11 +157,6 @@ fn create_thread(rx: RxChannel, opts: &Options) -> thread::JoinHandle<()> {
                 _ => {}
             }
         }
-
-        let encoded: Vec<u8> = serialize(&pc, Infinite).unwrap();
-        println!("{:?}", encoded);
-
-        // println!("{:?}", pc);
     })
 }
 
@@ -181,10 +207,11 @@ fn handle_dir_leave(stack: &mut FsStack,
 }
 
 fn handle_exit(overall: &OverallInfo, start: &PreciseTime, opts: &Options) {
-    let diff = start.to(PreciseTime::now());
-    let elapsed_secs = diff.num_nanoseconds().unwrap() as f64 * 1e-9;
-
-    print_stats(&overall, elapsed_secs, &opts);
+    if opts.stats.enabled {
+        let diff = start.to(PreciseTime::now());
+        let elapsed_secs = diff.num_nanoseconds().unwrap() as f64 * 1e-9;
+        print_stats(&overall, elapsed_secs, &opts);
+    }
 }
 
 fn handle_file(pc: &mut BTreeMap<String, PathCacheInfo>,
@@ -202,7 +229,6 @@ fn handle_file(pc: &mut BTreeMap<String, PathCacheInfo>,
     parts.reverse();
 
     path_cache::construct(pc, &mut parts, &info.clone());
-    // path_cache::print(&pc, 0);
 
     let res = print_progress_if_needed(overall, &path, &info, &opts);
 
@@ -243,7 +269,7 @@ fn handle_fs_item(stack: &mut FsStack,
 }
 
 fn print_progress(overall: &OverallInfo, path: &String, info: &Box<FsItemInfo>, opts: &Options) {
-    match opts.progress_format {
+    match opts.progress.format {
         ProgressFormat::Dot => print!("."),
         ProgressFormat::Path => {
             println!("{} {}", overall.all(), path);
@@ -257,10 +283,9 @@ fn print_progress_if_needed(overall: &OverallInfo,
                             info: &Box<FsItemInfo>,
                             opts: &Options)
                             -> bool {
-    if opts.print_progress && (overall.all() % opts.progress_count) == 0 {
+    if opts.progress.enabled && (overall.all() % opts.progress.count) == 0 {
         print_progress(&overall, &path, &info, &opts);
         true
-
     } else {
         false
     }
@@ -283,8 +308,8 @@ fn print_stats(info: &OverallInfo, elapsed_secs: f64, opts: &Options) {
         0.0
     };
 
-    if opts.print_progress {
-        match opts.progress_format {
+    if opts.progress.enabled {
+        match opts.progress.format {
             ProgressFormat::Dot => println!(""),
             _ => {}
         };

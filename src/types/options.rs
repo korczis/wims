@@ -4,25 +4,60 @@ use clap::ArgMatches;
 use super::progress_format::ProgressFormat;
 
 #[derive(Debug, Clone, Copy)]
+pub struct OptionsCache {
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct OptionsHuman {
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct OptionsProgress {
+    pub enabled: bool,
+    pub count: u64,
+    pub format: ProgressFormat,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct OptionsStats {
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct OptionsTree {
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Copy)]
 pub struct Options {
-    pub print_progress: bool,
-    pub progress_count: u64,
-    pub progress_format: ProgressFormat,
+    pub cache: OptionsCache,
+    pub human: OptionsHuman,
+    pub progress: OptionsProgress,
+    pub stats: OptionsStats,
+    pub tree: OptionsTree,
 }
 
 impl<'a> From<&'a ArgMatches<'a>> for Options {
     fn from(matches: &ArgMatches) -> Options {
-        println!("Parsing options");
+        debug!("Parsing options");
         Options {
-            print_progress: matches.is_present("progress"),
-            progress_count: matches.value_of("progress-count")
-                .unwrap()
-                .to_string()
-                .parse::<u64>()
-                .unwrap_or(10000),
-            progress_format: ProgressFormat::from(matches.value_of("progress-format")
-                .unwrap()
-                .to_string()),
+            cache: OptionsCache { enabled: matches.is_present("cache") },
+            human: OptionsHuman { enabled: matches.is_present("human") },
+            progress: OptionsProgress {
+                enabled: matches.is_present("progress"),
+                count: matches.value_of("progress-count")
+                    .unwrap()
+                    .to_string()
+                    .parse::<u64>()
+                    .unwrap_or(10000),
+                format: ProgressFormat::from(matches.value_of("progress-format")
+                    .unwrap()
+                    .to_string()),
+            },
+            stats: OptionsStats { enabled: matches.is_present("stats") },
+            tree: OptionsTree { enabled: matches.is_present("tree") },
         }
     }
 }
