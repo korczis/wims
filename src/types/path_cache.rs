@@ -185,32 +185,48 @@ fn human_format_if_needed(size: u64, human_readable: bool) -> String {
     }
 }
 
-pub fn print<T>(pc: &BTreeMap<String, PathCache<T>>, depth: usize, human_readable: bool)
+pub fn print<T>(pc: &BTreeMap<String, PathCache<T>>,
+                depth: u16,
+                max_depth: u16,
+                only_dirs: bool,
+                human_readable: bool)
     where T: Clone + Copy + Debug + ItemSize + Serialize
 {
     for (_k, ref v) in pc {
         // print!("{:?}", v);
 
-        print!("{}", String::from("  ").repeat(depth));
         if let Some(data) = v.data {
-            let size = match data.event_type() {
+            match data.event_type() {
                 &EventType::DirEnter => {
-                    format!("{} / {} / {}",
-                            human_format_if_needed(v.files_size(), human_readable),
-                            human_format_if_needed(v.dirs_size(), human_readable),
-                            human_format_if_needed(v.total_size(), human_readable))
+                    print!("{}", String::from("  ").repeat(depth as usize));
+                    println!("{} ({} / {} / {})",
+                             v.path,
+                             human_format_if_needed(v.files_size(), human_readable),
+                             human_format_if_needed(v.dirs_size(), human_readable),
+                             human_format_if_needed(v.total_size(), human_readable));
                 }
-                &EventType::File => human_format_if_needed(data.size(), human_readable),
-                _ => format!(""),
+                &EventType::File => {
+                    if only_dirs == false {
+                        print!("{}", String::from("  ").repeat(depth as usize));
+                        println!("{} ({})",
+                                 v.path,
+                                 human_format_if_needed(data.size(), human_readable));
+                    }
+                }
+                _ => {}
             };
-
-            println!("{} ({})", v.path, size);
         } else {
             println!("{}", v.path);
         }
 
         if v.childs != None {
-            print(v.childs.as_ref().unwrap(), depth + 1, human_readable);
+            if max_depth == 0 || (depth < max_depth) {
+                print(v.childs.as_ref().unwrap(),
+                      depth + 1,
+                      max_depth,
+                      only_dirs,
+                      human_readable);
+            }
         }
     }
 }

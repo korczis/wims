@@ -16,3 +16,5 @@
 # More information here http://doc.crates.io/guide.html#cargotoml-vs-cargolock
 Cargo.lock
 **/*.rs.bk
+# will have compiled files and executables
+/target/

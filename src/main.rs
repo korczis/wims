@@ -65,6 +65,14 @@ fn main() {
             .help("Show FS tree")
             .short("t")
             .long("tree"))
+        .arg(Arg::with_name("tree-depth")
+            .help("Show only N first tree levels")
+            .short("d")
+            .long("tree-depth")
+            .default_value("0"))
+        .arg(Arg::with_name("tree-only-dirs")
+            .help("Print only directories in tree")
+            .long("tree-only-dirs"))
         .arg(Arg::with_name("DIR")
             .help("Directories to process")
             .index(1)
@@ -87,7 +95,16 @@ fn main() {
     let handle = create_thread(rx, &opts);
 
     let dirs: Vec<_> = match matches.values_of("DIR") {
-        Some(dirs) => dirs.map(|d| d.trim_right_matches('/').to_string()).collect(),
+        Some(dirs) => {
+            dirs.map(|d| {
+                    if d.len() > 1 {
+                        d.trim_right_matches('/').to_string()
+                    } else {
+                        d.to_string()
+                    }
+                })
+                .collect()
+        }
         _ => vec![String::from(".")],
     };
 
@@ -146,7 +163,11 @@ fn create_thread(rx: RxChannel, opts: &Options) -> thread::JoinHandle<()> {
                             }
 
                             if opts.tree.enabled {
-                                print(&pc, 0, opts.human.enabled);
+                                print(&pc,
+                                      0,
+                                      opts.tree.max_depth,
+                                      opts.tree.only_dirs,
+                                      opts.human.enabled);
                             }
 
                             handle_exit(&overall, &start, &opts);

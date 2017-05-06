@@ -28,6 +28,8 @@ pub struct OptionsStats {
 #[derive(Debug, Clone, Copy)]
 pub struct OptionsTree {
     pub enabled: bool,
+    pub max_depth: u16,
+    pub only_dirs: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -57,7 +59,15 @@ impl<'a> From<&'a ArgMatches<'a>> for Options {
                     .to_string()),
             },
             stats: OptionsStats { enabled: matches.is_present("stats") },
-            tree: OptionsTree { enabled: matches.is_present("tree") },
+            tree: OptionsTree {
+                enabled: matches.is_present("tree"),
+                max_depth: matches.value_of("tree-depth")
+                    .unwrap()
+                    .to_string()
+                    .parse::<u16>()
+                    .unwrap_or(0),
+                only_dirs: matches.is_present("tree-only-dirs"),
+            },
         }
     }
 }
