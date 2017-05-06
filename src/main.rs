@@ -4,6 +4,7 @@ extern crate env_logger;
 
 extern crate bincode;
 extern crate clap;
+extern crate quickcheck;
 extern crate serde;
 extern crate wims;
 extern crate time;
@@ -163,11 +164,11 @@ fn create_thread(rx: RxChannel, opts: &Options) -> thread::JoinHandle<()> {
                             }
 
                             if opts.tree.enabled {
-                                print(&pc,
-                                      0,
-                                      opts.tree.max_depth,
-                                      opts.tree.only_dirs,
-                                      opts.human.enabled);
+                                PathCache::print(&pc,
+                                                 0,
+                                                 opts.tree.max_depth,
+                                                 opts.tree.only_dirs,
+                                                 opts.human.enabled);
                             }
 
                             handle_exit(&overall, &start, &opts);
@@ -196,7 +197,7 @@ fn handle_dir_enter(stack: &mut FsStack,
         .collect::<Vec<String>>();
     parts.reverse();
 
-    path_cache::construct(pc, &mut parts, &info.clone());
+    PathCache::construct(pc, &mut parts, &info.clone());
     // path_cache::print(&pc, 0);
 
     let res = print_progress_if_needed(overall, path, info, opts);
@@ -249,7 +250,7 @@ fn handle_file(pc: &mut BTreeMap<String, PathCacheInfo>,
         .collect::<Vec<String>>();
     parts.reverse();
 
-    path_cache::construct(pc, &mut parts, &info.clone());
+    PathCache::construct(pc, &mut parts, &info.clone());
 
     let res = print_progress_if_needed(overall, &path, &info, &opts);
 

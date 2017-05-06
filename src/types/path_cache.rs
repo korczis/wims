@@ -48,7 +48,7 @@ impl<T> PathCache<T>
                 if let Some(data) = v.data {
                     match data.event_type() {
                         &EventType::File => self.files_size += data.size(),
-                        &EventType::DirEnter => self.dirs_size += v.files_size,
+                        &EventType::DirEnter => self.dirs_size += v.total_size,
                         _ => {}
                     }
                 }
@@ -56,6 +56,115 @@ impl<T> PathCache<T>
         }
 
         self.total_size = self.dirs_size + self.files_size;
+        if let Some(data) = self.data {
+            self.total_size += data.size()
+        }
+    }
+
+    pub fn construct(pc: &mut BTreeMap<String, PathCache<T>>, parts: &mut Vec<String>, data: &T) {
+        if let Some(part) = parts.pop() {
+            let node_data = if parts.len() == 0 {
+                Some(data.clone())
+            } else {
+                None
+            };
+
+            let mut tmp: BTreeMap<String, PathCache<T>> = BTreeMap::new();
+            if parts.len() > 0 {
+                PathCache::construct(&mut tmp, parts, data);
+            };
+
+            let key = part.clone();
+            let has_key = pc.contains_key(&key);
+
+            if has_key {
+                let item = pc.get_mut(&key).unwrap();
+                if item.childs == None {
+                    item.childs = Some(tmp);
+                } else {
+                    PathCache::merge(item.childs.as_mut().unwrap(), &mut tmp);
+                }
+            } else {
+                pc.insert(key,
+                          PathCache {
+                              path: part.clone(),
+                              childs: if parts.len() > 0 {
+                                  Some(tmp)
+                              } else {
+                                  Some(tmp)
+                              },
+                              data: node_data,
+                              dirs_size: 0,
+                              files_size: 0,
+                              total_size: 0,
+                          });
+            }
+        }
+    }
+
+    pub fn merge(left: &mut BTreeMap<String, PathCache<T>>,
+                 right: &mut BTreeMap<String, PathCache<T>>) {
+        for (k, v) in right.iter_mut() {
+            if !left.contains_key(k) {
+                left.insert(k.clone(), v.clone());
+            } else {
+                let left_has_childs = left.get(k).as_ref().unwrap().childs.as_ref() != None;
+                let right_has_childs = v.childs != None;
+
+                if right_has_childs {
+                    if !left_has_childs {
+                        left.get_mut(k).unwrap().childs = v.childs.clone();
+                    } else {
+                        PathCache::merge(left.get_mut(k).unwrap().childs.as_mut().unwrap(),
+                                         v.childs.as_mut().unwrap());
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn print(pc: &BTreeMap<String, PathCache<T>>,
+                 depth: u16,
+                 max_depth: u16,
+                 only_dirs: bool,
+                 human_readable: bool) {
+        for (_k, ref v) in pc {
+            // print!("{:?}", v);
+
+            if let Some(data) = v.data {
+                match data.event_type() {
+                    &EventType::DirEnter => {
+                        print!("{}", String::from("  ").repeat(depth as usize));
+                        println!("{} ({} / {} / {})",
+                                 v.path,
+                                 human_format_if_needed(v.files_size(), human_readable),
+                                 human_format_if_needed(v.dirs_size(), human_readable),
+                                 human_format_if_needed(v.total_size(), human_readable));
+                    }
+                    &EventType::File => {
+                        if only_dirs == false {
+                            print!("{}", String::from("  ").repeat(depth as usize));
+                            println!("{} ({})",
+                                     v.path,
+                                     human_format_if_needed(data.size(), human_readable));
+                        }
+                    }
+                    _ => {}
+                };
+            } else {
+                println!("{}", v.path);
+            }
+
+            if v.childs != None {
+                if max_depth == 0 || (depth < max_depth) {
+                    PathCache::print(v.childs.as_ref().unwrap(),
+                                     depth + 1,
+                                     max_depth,
+                                     only_dirs,
+                                     human_readable);
+                }
+            }
+        }
     }
 }
 
@@ -87,49 +196,6 @@ impl<T> PartialOrd for PathCache<T>
     }
 }
 
-pub fn construct<T>(pc: &mut BTreeMap<String, PathCache<T>>, parts: &mut Vec<String>, data: &T)
-    where T: Clone + Copy + Debug + ItemSize + Serialize
-{
-    if let Some(part) = parts.pop() {
-        let node_data = if parts.len() == 0 {
-            Some(data.clone())
-        } else {
-            None
-        };
-
-        let mut tmp: BTreeMap<String, PathCache<T>> = BTreeMap::new();
-        if parts.len() > 0 {
-            construct(&mut tmp, parts, data);
-        };
-
-        let key = part.clone();
-        let has_key = pc.contains_key(&key);
-
-        if has_key {
-            let item = pc.get_mut(&key).unwrap();
-            if item.childs == None {
-                item.childs = Some(tmp);
-            } else {
-                merge(item.childs.as_mut().unwrap(), &mut tmp);
-            }
-        } else {
-            pc.insert(key,
-                      PathCache {
-                          path: part.clone(),
-                          childs: if parts.len() > 0 {
-                              Some(tmp)
-                          } else {
-                              Some(tmp)
-                          },
-                          data: node_data,
-                          dirs_size: 0,
-                          files_size: 0,
-                          total_size: 0,
-                      });
-        }
-    }
-}
-
 impl<T> Serialize for PathCache<T>
     where T: Clone + Copy + Debug + ItemSize + Serialize
 {
@@ -147,28 +213,6 @@ impl<T> Serialize for PathCache<T>
     }
 }
 
-pub fn merge<T>(left: &mut BTreeMap<String, PathCache<T>>,
-                right: &mut BTreeMap<String, PathCache<T>>)
-    where T: Clone + Copy + Debug + ItemSize + Serialize
-{
-    for (k, v) in right.iter_mut() {
-        if !left.contains_key(k) {
-            left.insert(k.clone(), v.clone());
-        } else {
-            let left_has_childs = left.get(k).as_ref().unwrap().childs.as_ref() != None;
-            let right_has_childs = v.childs != None;
-
-            if right_has_childs {
-                if !left_has_childs {
-                    left.get_mut(k).unwrap().childs = v.childs.clone();
-                } else {
-                    merge(left.get_mut(k).unwrap().childs.as_mut().unwrap(),
-                          v.childs.as_mut().unwrap());
-                }
-            }
-        }
-    }
-}
 
 fn human_format_if_needed(size: u64, human_readable: bool) -> String {
     match human_readable {
@@ -182,51 +226,5 @@ fn human_format_if_needed(size: u64, human_readable: bool) -> String {
 
         }
         false => format!("{}", size),
-    }
-}
-
-pub fn print<T>(pc: &BTreeMap<String, PathCache<T>>,
-                depth: u16,
-                max_depth: u16,
-                only_dirs: bool,
-                human_readable: bool)
-    where T: Clone + Copy + Debug + ItemSize + Serialize
-{
-    for (_k, ref v) in pc {
-        // print!("{:?}", v);
-
-        if let Some(data) = v.data {
-            match data.event_type() {
-                &EventType::DirEnter => {
-                    print!("{}", String::from("  ").repeat(depth as usize));
-                    println!("{} ({} / {} / {})",
-                             v.path,
-                             human_format_if_needed(v.files_size(), human_readable),
-                             human_format_if_needed(v.dirs_size(), human_readable),
-                             human_format_if_needed(v.total_size(), human_readable));
-                }
-                &EventType::File => {
-                    if only_dirs == false {
-                        print!("{}", String::from("  ").repeat(depth as usize));
-                        println!("{} ({})",
-                                 v.path,
-                                 human_format_if_needed(data.size(), human_readable));
-                    }
-                }
-                _ => {}
-            };
-        } else {
-            println!("{}", v.path);
-        }
-
-        if v.childs != None {
-            if max_depth == 0 || (depth < max_depth) {
-                print(v.childs.as_ref().unwrap(),
-                      depth + 1,
-                      max_depth,
-                      only_dirs,
-                      human_readable);
-            }
-        }
     }
 }

@@ -2,6 +2,10 @@
 extern crate log;
 extern crate env_logger;
 
+#[macro_use]
+#[cfg(test)]
+extern crate quickcheck;
+
 extern crate clap;
 extern crate serde;
 
@@ -94,4 +98,16 @@ pub fn visit_dir(tx: &TxChannel, dir: &Path) -> io::Result<()> {
 
     debug!("Leaving directory {:?}", dir);
     Ok(())
+}
+
+mod tests {
+    #[cfg(bench)]
+    #[bench]
+    fn bench_year_flags_from_year(bh: &mut test::Bencher) {
+        bh.iter(|| {
+            for year in -999i32..1000 {
+                true
+            }
+        });
+    }
 }
