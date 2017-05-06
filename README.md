@@ -1,6 +1,6 @@
 # wims - Where Is My Space?
 
-This is temporary directory with some files.
+Find where is your space.
 
 ## Prerequisites
 
