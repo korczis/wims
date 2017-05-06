@@ -1,4 +1,4 @@
-# Description
+# wims - Where Is My Space?
 
 This is temporary directory with some files.
 
